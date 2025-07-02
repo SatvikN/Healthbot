@@ -40,6 +40,7 @@ class User(Base):
     # Relationships
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     symptom_reports = relationship("SymptomReport", back_populates="user", cascade="all, delete-orphan")
+    medical_reports = relationship("MedicalReport", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>" 

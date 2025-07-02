@@ -4,12 +4,15 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from ..database import get_db
 from ..models.user import User
 from ..models.conversation import Conversation, Message, ConversationStatus, MessageType
 from ..routers.auth import get_current_user
-# from ..services.llm_service import llm_service
+from ..services.llm_service import LLMService
 
 router = APIRouter()
 
@@ -82,8 +85,11 @@ async def start_new_conversation(
         db.commit()
         db.refresh(user_message)
         
-        # Generate AI welcome response
-        welcome_response = _generate_welcome_response(request.initial_message, request.chief_complaint)
+        # Generate AI welcome response using LLM
+        async with LLMService() as llm_service:
+            welcome_response = await _generate_welcome_response_llm(
+                llm_service, request.initial_message, request.chief_complaint
+            )
         
         # Save AI message
         ai_message = Message(
@@ -170,8 +176,11 @@ async def send_message(
         # Get conversation history for context
         conversation_history = _get_conversation_history(db, conversation.id)
         
-        # Generate intelligent response based on user input and conversation history
-        ai_response = _generate_smart_response(request.content, conversation_history)
+        # Generate intelligent response using LLM
+        async with LLMService() as llm_service:
+            ai_response = await _generate_smart_response_llm(
+                llm_service, request.content, conversation_history
+            )
         
         # Analyze if response requires follow-up
         requires_followup = _requires_followup(ai_response)
@@ -494,6 +503,119 @@ async def get_test_conversations():
             "messages": []
         }
     ]
+
+
+async def _generate_welcome_response_llm(
+    llm_service: LLMService, initial_message: str, chief_complaint: Optional[str] = None
+) -> str:
+    """Generate contextual welcome response using LLM."""
+    
+    system_prompt = """You are a professional medical assistant helping patients document their symptoms for healthcare providers. 
+
+Key guidelines:
+- Be empathetic and professional
+- Ask relevant follow-up questions based on their symptoms
+- Provide structured guidance for symptom documentation
+- Always recommend professional medical evaluation when appropriate
+- Do not provide medical diagnoses or treatment advice
+- Keep responses concise but comprehensive
+
+Generate a warm, professional welcome response that acknowledges their symptoms and asks relevant follow-up questions to help document their condition properly."""
+
+    context = f"Patient's initial message: {initial_message}"
+    if chief_complaint:
+        context += f"\nChief complaint: {chief_complaint}"
+    
+    try:
+        result = await llm_service.generate_response(
+            prompt=context,
+            system_prompt=system_prompt,
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        if result.get("success"):
+            return result.get("response", "Thank you for reaching out. Please describe your symptoms in detail so I can help document them properly.")
+        else:
+            # Fallback response if LLM fails
+            return _generate_fallback_welcome_response(initial_message, chief_complaint)
+            
+    except Exception as e:
+        logger.error(f"Error generating welcome response: {e}")
+        return _generate_fallback_welcome_response(initial_message, chief_complaint)
+
+
+async def _generate_smart_response_llm(
+    llm_service: LLMService, user_message: str, conversation_history: List[Dict]
+) -> str:
+    """Generate intelligent response using LLM based on user input and conversation context."""
+    
+    system_prompt = """You are a medical assistant helping patients document their symptoms for healthcare providers.
+
+Guidelines:
+- Ask follow-up questions to gather comprehensive symptom information
+- Be empathetic and professional
+- Guide patients to provide specific details (timeline, severity, triggers, etc.)
+- Do not provide medical diagnoses or treatment advice
+- Encourage professional medical evaluation when appropriate
+- Keep responses focused and concise
+
+Based on the conversation history and the latest user message, provide a helpful follow-up response that gathers more relevant medical information."""
+
+    # Format conversation history for context
+    history_text = ""
+    for msg in conversation_history[-5:]:  # Last 5 messages for context
+        role = "Patient" if msg.get("message_type") == "user" else "Assistant"
+        history_text += f"{role}: {msg.get('content', '')}\n"
+    
+    context = f"Conversation history:\n{history_text}\nLatest patient message: {user_message}"
+    
+    try:
+        result = await llm_service.generate_response(
+            prompt=context,
+            system_prompt=system_prompt,
+            temperature=0.7,
+            max_tokens=250
+        )
+        
+        if result.get("success"):
+            return result.get("response", "Thank you for that information. Could you tell me more about your symptoms?")
+        else:
+            # Fallback response if LLM fails
+            return _generate_fallback_smart_response(user_message, conversation_history)
+            
+    except Exception as e:
+        logger.error(f"Error generating smart response: {e}")
+        return _generate_fallback_smart_response(user_message, conversation_history)
+
+
+def _generate_fallback_welcome_response(initial_message: str, chief_complaint: Optional[str] = None) -> str:
+    """Fallback welcome response when LLM is not available."""
+    return f"""Hello! I'm your medical assistant and I'm here to help you document your symptoms for healthcare providers.
+
+{f"I see you mentioned: {chief_complaint}. " if chief_complaint else ""}Thank you for reaching out about your health concerns.
+
+To provide the most helpful documentation:
+• Please describe your main symptoms in detail
+• When did they start?
+• How severe are they on a scale of 1-10?
+• What makes them better or worse?
+
+I'll help create a comprehensive report of your condition. Please note that I cannot provide medical diagnoses - my role is to help organize your symptoms for your healthcare provider."""
+
+
+def _generate_fallback_smart_response(user_message: str, conversation_history: List[Dict]) -> str:
+    """Fallback smart response when LLM is not available."""
+    message_lower = user_message.lower()
+    
+    if any(word in message_lower for word in ["yes", "yeah", "yep", "correct"]):
+        return "Thank you for confirming that. Could you provide more details about this symptom?"
+    elif any(word in message_lower for word in ["no", "nope", "not really"]):
+        return "I understand. Are there any other symptoms or concerns you'd like to discuss?"
+    elif any(number in message_lower for number in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]):
+        return "Thank you for rating your symptoms. Are there any triggers that make them better or worse?"
+    else:
+        return "Thank you for that information. Could you tell me more about when these symptoms started and what they feel like?"
 
 
 def _generate_welcome_response(initial_message: str, chief_complaint: Optional[str] = None) -> str:

@@ -9,7 +9,7 @@ from .database import engine, Base
 from .routers import auth, chat, symptoms, reports, health
 
 # Import all models to ensure they're registered with SQLAlchemy
-from .models import user, conversation, symptom, diagnosis
+from .models import user, conversation, symptom, diagnosis, medical_report
 
 
 @asynccontextmanager

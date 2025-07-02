@@ -1,12 +1,671 @@
-import React from 'react';
-import { Box, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import {
+  Box,
+  Typography,
+  Paper,
+  Container,
+  Grid,
+  TextField,
+  Button,
+  IconButton,
+  Chip,
+  Card,
+  CardContent,
+  CardActions,
+  InputAdornment,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Avatar,
+  Divider,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
+} from '@mui/material';
+import {
+  Search as SearchIcon,
+  FilterList as FilterIcon,
+  Download as DownloadIcon,
+  Visibility as ViewIcon,
+  Description as ReportIcon,
+  DateRange as DateIcon,
+  Chat as ChatIcon,
+  Assessment as AssessmentIcon,
+  MedicalServices as MedicalIcon,
+  Warning as WarningIcon,
+  CheckCircle as CheckCircleIcon,
+  Schedule as ScheduleIcon,
+} from '@mui/icons-material';
+import { useSnackbar } from '../contexts/SnackbarContext';
+import { reportsAPI } from '../services/api';
+
+interface MedicalReport {
+  id: number;
+  title: string;
+  type: 'initial_consultation' | 'follow_up' | 'symptom_tracking';
+  status: 'completed' | 'pending' | 'in_progress';
+  createdAt: string;
+  conversationId: number;
+  conversationTitle: string;
+  summary: string;
+  urgencyLevel: 'low' | 'medium' | 'high';
+  keyFindings: string[];
+  recommendations: string[];
+  fileSize?: string;
+}
 
 const ReportsPage: React.FC = () => {
+  const { showMessage } = useSnackbar();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [selectedReport, setSelectedReport] = useState<MedicalReport | null>(null);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+
+  // Reports data - now fetched from backend
+  const [reports, setReports] = useState<MedicalReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Demo fallback data
+  const demoReports: MedicalReport[] = [
+    {
+      id: 1,
+      title: 'Headache Assessment Report',
+      type: 'initial_consultation',
+      status: 'completed',
+      createdAt: '2024-01-15T14:30:00Z',
+      conversationId: 1,
+      conversationTitle: 'Headache Consultation',
+      summary: 'Initial consultation report for persistent headache symptoms. Patient describes throbbing pain, moderate intensity (6/10), with triggers including stress and lack of sleep.',
+      urgencyLevel: 'medium',
+      keyFindings: [
+        'Persistent headache for 3 days',
+        'Throbbing pain pattern',
+        'Pain intensity: 6/10',
+        'Triggers: stress, lack of sleep',
+        'No fever or neurological symptoms'
+      ],
+      recommendations: [
+        'Consider stress management techniques',
+        'Maintain regular sleep schedule',
+        'Monitor pain patterns',
+        'Consult healthcare provider if symptoms persist'
+      ],
+      fileSize: '2.3 MB'
+    },
+    {
+      id: 2,
+      title: 'General Health Consultation',
+      type: 'initial_consultation',
+      status: 'completed',
+      createdAt: '2024-01-14T10:15:00Z',
+      conversationId: 2,
+      conversationTitle: 'General Health Check',
+      summary: 'Comprehensive health consultation covering overall wellness, medication compliance, and preventive care recommendations.',
+      urgencyLevel: 'low',
+      keyFindings: [
+        'No significant health concerns',
+        'Regular medication compliance',
+        'Stable vital signs reported',
+        'Good sleep quality'
+      ],
+      recommendations: [
+        'Continue current medication regimen',
+        'Maintain healthy lifestyle',
+        'Schedule routine check-up',
+        'Monitor blood pressure weekly'
+      ],
+      fileSize: '1.8 MB'
+    },
+    {
+      id: 3,
+      title: 'Back Pain - Weekly Tracking',
+      type: 'symptom_tracking',
+      status: 'completed',
+      createdAt: '2024-01-13T16:45:00Z',
+      conversationId: 3,
+      conversationTitle: 'Lower Back Pain',
+      summary: 'Weekly symptom tracking report for lower back pain. Monitoring pain patterns, triggers, and effectiveness of current management strategies.',
+      urgencyLevel: 'medium',
+      keyFindings: [
+        'Lower back pain onset after exercise',
+        'Sharp pain with movement',
+        'Limited range of motion',
+        'No radiating pain to legs'
+      ],
+      recommendations: [
+        'Rest and avoid strenuous activity',
+        'Apply ice for 15-20 minutes',
+        'Gentle stretching exercises',
+        'Consider physical therapy consultation'
+      ],
+      fileSize: '2.1 MB'
+    },
+    {
+      id: 4,
+      title: 'Respiratory Symptoms Follow-up',
+      type: 'follow_up',
+      status: 'in_progress',
+      createdAt: '2024-01-12T09:30:00Z',
+      conversationId: 4,
+      conversationTitle: 'Cough and Congestion',
+      summary: 'Follow-up report on respiratory symptoms showing improvement with current treatment plan. Tracking recovery progress.',
+      urgencyLevel: 'low',
+      keyFindings: [
+        'Cough frequency decreased',
+        'Congestion improving',
+        'No fever present',
+        'Good medication tolerance'
+      ],
+      recommendations: [
+        'Continue current medication',
+        'Increase fluid intake',
+        'Use humidifier at night',
+        'Follow up in 1 week'
+      ],
+      fileSize: '1.5 MB'
+    },
+    {
+      id: 5,
+      title: 'Chest Pain Follow-up Review',
+      type: 'follow_up',
+      status: 'pending',
+      createdAt: '2024-01-11T20:15:00Z',
+      conversationId: 5,
+      conversationTitle: 'Chest Discomfort',
+      summary: 'Follow-up review of chest discomfort symptoms after initial emergency evaluation. Monitoring ongoing symptoms and treatment response.',
+      urgencyLevel: 'high',
+      keyFindings: [
+        'Chest discomfort reported',
+        'Associated shortness of breath',
+        'Symptoms during physical activity',
+        'No previous cardiac history'
+      ],
+      recommendations: [
+        'Continue cardiac monitoring',
+        'Follow up with cardiologist',
+        'Avoid strenuous physical activity',
+        'Take prescribed medications as directed'
+      ],
+      fileSize: '3.2 MB'
+    }
+  ];
+
+  // Load reports from backend
+  const loadReports = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Try to fetch from real API first
+      const backendReports = await reportsAPI.getReports({
+        report_type: typeFilter === 'all' ? undefined : typeFilter,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        limit: 20,
+        offset: 0
+      });
+      
+      // Transform backend reports to frontend format
+      const transformedReports: MedicalReport[] = backendReports.map(report => ({
+        id: report.id,
+        title: report.title,
+        type: (report as any).report_type || 'initial_consultation',
+        status: report.status as any,
+        createdAt: (report as any).generated_at || new Date().toISOString(),
+        conversationId: (report as any).conversation_id || 0,
+        conversationTitle: `Conversation ${(report as any).conversation_id || 'Unknown'}`,
+        summary: `Report generated with ${(report as any).symptom_count || 0} symptoms documented.`,
+        urgencyLevel: (report as any).urgency_level || 'low',
+        keyFindings: ['Report generated from conversation', 'Symptoms documented', 'Analysis completed'],
+        recommendations: ['Review with healthcare provider', 'Follow up if needed', 'Monitor symptoms'],
+        fileSize: '2.1 MB'
+      }));
+      
+      setReports(transformedReports);
+    } catch (err) {
+      console.error('Failed to load reports from backend:', err);
+      
+      // Fallback to demo data if backend fails
+      setReports(demoReports);
+      setError('Using demo data - backend unavailable');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load reports on component mount and when filters change
+  React.useEffect(() => {
+    loadReports();
+  }, [statusFilter, typeFilter]);
+
+  const filteredReports = reports.filter(report => {
+    const matchesSearch = report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         report.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         report.conversationTitle.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = statusFilter === 'all' || report.status === statusFilter;
+    const matchesType = typeFilter === 'all' || report.type === typeFilter;
+    
+    return matchesSearch && matchesStatus && matchesType;
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'success';
+      case 'in_progress': return 'warning';
+      case 'pending': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getUrgencyColor = (urgency: string) => {
+    switch (urgency) {
+      case 'high': return 'error';
+      case 'medium': return 'warning';
+      case 'low': return 'success';
+      default: return 'default';
+    }
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'initial_consultation': return <MedicalIcon />;
+      case 'follow_up': return <ScheduleIcon />;
+      case 'symptom_tracking': return <AssessmentIcon />;
+      default: return <ReportIcon />;
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case 'initial_consultation': return 'Initial Consultation';
+      case 'follow_up': return 'Follow-up Report';
+      case 'symptom_tracking': return 'Symptom Tracking';
+      default: return 'Medical Report';
+    }
+  };
+
+  const handleViewReport = (report: MedicalReport) => {
+    setSelectedReport(report);
+    setDetailsDialogOpen(true);
+  };
+
+  const handleDownloadReport = (report: MedicalReport) => {
+    showMessage(`Downloading ${report.title} (${report.fileSize})`, 'info');
+  };
+
+  const handleViewConversation = (conversationId: number) => {
+    showMessage(`Opening conversation #${conversationId} in Chat section`, 'info');
+  };
+
+  const handleGenerateReport = async (conversationId: number, reportType: string = 'initial_consultation') => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/reports/conversation/${conversationId}/generate?report_type=${reportType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        showMessage(`Report "${result.title}" generated successfully!`, 'success');
+        loadReports(); // Refresh the reports list
+      } else {
+        throw new Error('Failed to generate report');
+      }
+    } catch (error) {
+      console.error('Error generating report:', error);
+      showMessage('Failed to generate report. Please try again.', 'error');
+    }
+  };
+
   return (
-    <Box p={3}>
-      <Typography variant="h4">Reports</Typography>
-      <Typography>Medical reports will be displayed here.</Typography>
-    </Box>
+    <Container maxWidth="lg" sx={{ py: 3 }}>
+      {/* Status Banner */}
+      {error ? (
+        <Paper sx={{ p: 2, mb: 3, bgcolor: 'warning.light', borderRadius: 2 }}>
+          <Typography variant="body2" color="warning.dark" textAlign="center">
+            ⚠️ <strong>Demo Mode:</strong> {error}. Using sample data for demonstration.
+          </Typography>
+        </Paper>
+      ) : (
+        <Paper sx={{ p: 2, mb: 3, bgcolor: 'success.light', borderRadius: 2 }}>
+          <Typography variant="body2" color="success.dark" textAlign="center">
+            ✅ <strong>Live Mode:</strong> Connected to backend API. Reports generated from actual conversations.
+          </Typography>
+        </Paper>
+      )}
+
+      {/* Header */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+        <Box>
+          <Typography variant="h4" gutterBottom>
+            Medical Reports
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            Reports generated from your medical consultations
+          </Typography>
+        </Box>
+        <Chip
+          label={`${filteredReports.length} Report${filteredReports.length !== 1 ? 's' : ''}`}
+          variant="outlined"
+          color="primary"
+        />
+      </Box>
+
+      {/* Search and Filters */}
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={4}>
+            <TextField
+              fullWidth
+              placeholder="Search reports..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon color="action" />
+                  </InputAdornment>
+                ),
+              }}
+              variant="outlined"
+              size="small"
+            />
+          </Grid>
+          
+          <Grid item xs={12} md={3}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                label="Status"
+              >
+                <MenuItem value="all">All Status</MenuItem>
+                <MenuItem value="completed">Completed</MenuItem>
+                <MenuItem value="in_progress">In Progress</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          
+          <Grid item xs={12} md={3}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Type</InputLabel>
+              <Select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                label="Type"
+              >
+                <MenuItem value="all">All Types</MenuItem>
+                <MenuItem value="initial_consultation">Initial Consultation</MenuItem>
+                <MenuItem value="follow_up">Follow-up Report</MenuItem>
+                <MenuItem value="symptom_tracking">Symptom Tracking</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          
+          <Grid item xs={12} md={2}>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<FilterIcon />}
+              onClick={() => {
+                setSearchTerm('');
+                setStatusFilter('all');
+                setTypeFilter('all');
+              }}
+            >
+              Clear
+            </Button>
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {/* Reports List */}
+      {loading ? (
+        <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
+          <CircularProgress size={60} sx={{ mb: 2 }} />
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            Loading Reports...
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Fetching your medical reports from the server
+          </Typography>
+        </Paper>
+      ) : filteredReports.length === 0 ? (
+        <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
+          <ReportIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            No reports found
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Try adjusting your search terms or filters
+          </Typography>
+        </Paper>
+      ) : (
+        <Grid container spacing={3}>
+          {filteredReports.map((report) => (
+            <Grid item xs={12} md={6} lg={4} key={report.id}>
+              <Card 
+                sx={{ 
+                  height: '100%', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  borderRadius: 2,
+                  '&:hover': {
+                    boxShadow: 3,
+                  },
+                }}
+              >
+                <CardContent sx={{ flexGrow: 1 }}>
+                  <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={2}>
+                    <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                      {getTypeIcon(report.type)}
+                    </Avatar>
+                    <Box display="flex" gap={1}>
+                      <Chip
+                        size="small"
+                        label={report.status.replace('_', ' ')}
+                        color={getStatusColor(report.status) as any}
+                        variant="outlined"
+                      />
+                      <Chip
+                        size="small"
+                        label={report.urgencyLevel}
+                        color={getUrgencyColor(report.urgencyLevel) as any}
+                        variant="filled"
+                      />
+                    </Box>
+                  </Box>
+                  
+                  <Typography variant="h6" gutterBottom noWrap>
+                    {report.title}
+                  </Typography>
+                  
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    {getTypeLabel(report.type)}
+                  </Typography>
+                  
+                  <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 3,
+                      overflow: 'hidden',
+                      mb: 2
+                    }}
+                  >
+                    {report.summary}
+                  </Typography>
+                  
+                  <Box display="flex" alignItems="center" gap={1} mb={1}>
+                    <DateIcon fontSize="small" color="action" />
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(report.createdAt).toLocaleDateString()} at{' '}
+                      {new Date(report.createdAt).toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </Typography>
+                  </Box>
+                  
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <ChatIcon fontSize="small" color="action" />
+                    <Typography 
+                      variant="caption" 
+                      color="primary"
+                      sx={{ cursor: 'pointer', textDecoration: 'underline' }}
+                      onClick={() => handleViewConversation(report.conversationId)}
+                    >
+                      {report.conversationTitle}
+                    </Typography>
+                  </Box>
+                </CardContent>
+                
+                <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
+                  <Button
+                    size="small"
+                    startIcon={<ViewIcon />}
+                    onClick={() => handleViewReport(report)}
+                  >
+                    View Details
+                  </Button>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleDownloadReport(report)}
+                    color="primary"
+                  >
+                    <DownloadIcon />
+                  </IconButton>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+
+      {/* Report Details Dialog */}
+      <Dialog 
+        open={detailsDialogOpen} 
+        onClose={() => setDetailsDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        {selectedReport && (
+          <>
+            <DialogTitle>
+              <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                  {getTypeIcon(selectedReport.type)}
+                </Avatar>
+                <Box>
+                  <Typography variant="h6">{selectedReport.title}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {getTypeLabel(selectedReport.type)} • {selectedReport.fileSize}
+                  </Typography>
+                </Box>
+              </Box>
+            </DialogTitle>
+            
+            <DialogContent>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>Report Summary</Typography>
+                  <Typography variant="body2" paragraph>
+                    {selectedReport.summary}
+                  </Typography>
+                  
+                  <Typography variant="subtitle2" gutterBottom>Status & Priority</Typography>
+                  <Box display="flex" gap={1} mb={2}>
+                    <Chip
+                      size="small"
+                      label={selectedReport.status.replace('_', ' ')}
+                      color={getStatusColor(selectedReport.status) as any}
+                      variant="outlined"
+                    />
+                    <Chip
+                      size="small"
+                      label={`${selectedReport.urgencyLevel} priority`}
+                      color={getUrgencyColor(selectedReport.urgencyLevel) as any}
+                      variant="filled"
+                    />
+                  </Box>
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>Key Findings</Typography>
+                  <List dense>
+                    {selectedReport.keyFindings.map((finding, index) => (
+                      <ListItem key={index} sx={{ py: 0.5 }}>
+                        <ListItemAvatar sx={{ minWidth: 32 }}>
+                          <CheckCircleIcon fontSize="small" color="success" />
+                        </ListItemAvatar>
+                        <ListItemText 
+                          primary={finding}
+                          primaryTypographyProps={{ variant: 'body2' }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" gutterBottom>Recommendations</Typography>
+                  <List dense>
+                    {selectedReport.recommendations.map((recommendation, index) => (
+                      <ListItem key={index} sx={{ py: 0.5 }}>
+                        <ListItemAvatar sx={{ minWidth: 32 }}>
+                          <MedicalIcon fontSize="small" color="primary" />
+                        </ListItemAvatar>
+                        <ListItemText 
+                          primary={recommendation}
+                          primaryTypographyProps={{ variant: 'body2' }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Grid>
+              </Grid>
+            </DialogContent>
+            
+            <DialogActions sx={{ p: 3 }}>
+              <Button onClick={() => setDetailsDialogOpen(false)}>
+                Close
+              </Button>
+              <Button 
+                variant="outlined"
+                startIcon={<ChatIcon />}
+                onClick={() => handleViewConversation(selectedReport.conversationId)}
+              >
+                View Conversation
+              </Button>
+              <Button 
+                variant="contained"
+                startIcon={<DownloadIcon />}
+                onClick={() => handleDownloadReport(selectedReport)}
+              >
+                Download Report
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+    </Container>
   );
 };
 
