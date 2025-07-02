@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 from ..database import get_db
 from ..models.user import User
 from ..models.conversation import Conversation, Message
+from ..models.medical_report import MedicalReport
 from ..routers.auth import get_current_user
 from ..services.llm_service import LLMService
 
@@ -308,14 +309,13 @@ async def get_conversation_details(
     }
 
 
-@router.put("/conversation/{conversation_id}/complete")
+@router.post("/conversation/{conversation_id}/complete")
 async def complete_conversation(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Mark a conversation as completed."""
-    
+    """Mark conversation as completed."""
     conversation = db.query(Conversation).filter(
         Conversation.id == conversation_id,
         Conversation.user_id == current_user.id
@@ -332,11 +332,71 @@ async def complete_conversation(
     
     db.commit()
     
-    return {
-        "status": "completed",
-        "message": "Conversation marked as completed",
-        "conversation_id": conversation_id
-    }
+    return {"status": "success", "message": "Conversation marked as completed"}
+
+
+@router.post("/conversation/{conversation_id}/diagnosis", response_model=Dict[str, Any])
+async def generate_diagnosis_recommendations(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate diagnosis and treatment recommendations based on conversation history."""
+    
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    try:
+        # Get conversation history
+        conversation_history = _get_conversation_history(db, conversation_id)
+        
+        if not conversation_history:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No conversation history available for analysis"
+            )
+        
+        # Generate diagnosis using LLM
+        async with LLMService() as llm_service:
+            diagnosis_response = await _generate_diagnosis_llm(
+                llm_service, conversation_history, current_user
+            )
+        
+        # Save AI diagnosis message
+        ai_message = Message(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=diagnosis_response
+        )
+        
+        db.add(ai_message)
+        db.commit()
+        db.refresh(ai_message)
+        
+        return {
+            "status": "success",
+            "diagnosis_message": {
+                "id": ai_message.id,
+                "content": ai_message.content,
+                "created_at": ai_message.created_at
+            },
+            "conversation_id": conversation_id
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate diagnosis: {str(e)}"
+        )
 
 
 @router.put("/conversation/{conversation_id}/title")
@@ -419,6 +479,100 @@ async def generate_followup_questions(
     }
 
 
+@router.post("/conversation/{conversation_id}/medical-report")
+async def generate_medical_report(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate a formal medical report from conversation history suitable for healthcare providers."""
+    
+    # Verify conversation exists and belongs to user
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    # Get conversation history
+    conversation_history = _get_conversation_history(db, conversation_id)
+    
+    if not conversation_history:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No conversation history available for report generation"
+        )
+    
+    try:
+        # Initialize LLM service
+        llm_service = LLMService()
+        
+        # Generate medical report
+        report_content = await _generate_medical_report_llm(
+            llm_service, conversation_history, current_user
+        )
+        
+        # Create a medical report record
+        
+        report = MedicalReport(
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            title=f"Medical Report - {conversation.title}",
+            type="medical_consultation",
+            summary=report_content.get("summary", ""),
+            key_findings=report_content.get("key_findings", []),
+            recommendations=report_content.get("recommendations", []),
+            urgency_level=report_content.get("urgency_level", "medium"),
+            status="completed"
+        )
+        
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        
+        return {
+            "report_id": report.id,
+            "title": report.title,
+            "content": report_content,
+            "status": "completed",
+            "message": "Medical report generated successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating medical report: {str(e)}")
+        # Return fallback report if LLM fails
+        fallback_content = _generate_fallback_medical_report(conversation_history, current_user)
+        
+        report = MedicalReport(
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            title=f"Medical Report - {conversation.title}",
+            type="medical_consultation",
+            summary=fallback_content.get("summary", ""),
+            key_findings=fallback_content.get("key_findings", []),
+            recommendations=fallback_content.get("recommendations", []),
+            urgency_level=fallback_content.get("urgency_level", "medium"),
+            status="completed"
+        )
+        
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        
+        return {
+            "report_id": report.id,
+            "title": report.title,
+            "content": fallback_content,
+            "status": "completed",
+            "message": "Medical report generated successfully (fallback mode)"
+        }
+
+
 # Helper functions
 def _get_conversation_history(db: Session, conversation_id: int) -> List[Dict]:
     """Get conversation history formatted for AI processing."""
@@ -477,7 +631,61 @@ async def test_chat():
     return {"message": "Chat router is working"}
 
 
-
+@router.get("/test-medical-report/{conversation_id}")
+async def test_medical_report_generation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Test endpoint for debugging medical report generation."""
+    try:
+        # Test 1: Check conversation exists
+        conversation = db.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            return {"error": "Conversation not found", "step": "conversation_check"}
+        
+        # Test 2: Get conversation history
+        conversation_history = _get_conversation_history(db, conversation_id)
+        
+        if not conversation_history:
+            return {"error": "No conversation history", "step": "history_check"}
+        
+        # Test 3: Try creating a simple medical report without LLM
+        simple_report = MedicalReport(
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            title=f"Test Report - {conversation.title}",
+            type="medical_consultation",
+            summary="Test summary",
+            key_findings=["Test finding"],
+            recommendations=["Test recommendation"],
+            urgency_level="medium",
+            status="completed"
+        )
+        
+        db.add(simple_report)
+        db.commit()
+        db.refresh(simple_report)
+        
+        return {
+            "success": True,
+            "message": "Test medical report created successfully",
+            "report_id": simple_report.id,
+            "conversation_history_count": len(conversation_history),
+            "conversation_title": conversation.title
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "step": "database_operation"
+        }
 
 
 async def _generate_welcome_response_llm(
@@ -564,6 +772,78 @@ Based on the conversation history and the latest user message, provide a helpful
         return _generate_fallback_smart_response(user_message, conversation_history)
 
 
+async def _generate_diagnosis_llm(
+    llm_service: LLMService, conversation_history: List[Dict], user: User
+) -> str:
+    """Generate diagnosis and treatment recommendations based on conversation history."""
+    
+    system_prompt = """You are a medical AI assistant providing preliminary analysis and recommendations based on symptom information gathered during consultation.
+
+IMPORTANT DISCLAIMERS:
+- You are NOT providing official medical diagnoses
+- Your analysis is for informational purposes only  
+- Always recommend consulting with healthcare professionals for proper diagnosis and treatment
+- For serious or emergency symptoms, always recommend immediate medical attention
+
+Your role is to:
+1. Summarize the key symptoms and findings from the conversation
+2. Suggest possible common conditions that could explain the symptoms
+3. Provide general health recommendations and self-care suggestions
+4. Clearly indicate what symptoms require immediate medical attention
+5. Recommend appropriate next steps for care
+
+Be thorough but appropriately cautious, and always prioritize patient safety. If you need more information to provide meaningful recommendations, clearly state what additional information would be helpful."""
+
+    # Format conversation history
+    history_text = "CONSULTATION SUMMARY:\n\n"
+    for msg in conversation_history:
+        role = "Patient" if msg.get("message_type") == "user" else "Assistant"
+        history_text += f"{role}: {msg.get('content', '')}\n"
+    
+    # Add user context if available
+    if user:
+        history_text += f"\nPATIENT CONTEXT:\n"
+        if user.age:
+            history_text += f"Age: {user.age}\n"
+        if user.gender:
+            history_text += f"Gender: {user.gender}\n"
+        if user.medical_history:
+            history_text += f"Medical History: {user.medical_history}\n"
+        if user.current_medications:
+            history_text += f"Current Medications: {user.current_medications}\n"
+        if user.allergies:
+            history_text += f"Allergies: {user.allergies}\n"
+    
+    prompt = f"""{history_text}
+
+Based on this consultation, please provide:
+
+1. **SYMPTOM SUMMARY**: A clear summary of the key symptoms reported
+2. **POSSIBLE CONDITIONS**: Common conditions that could explain these symptoms (with confidence levels)
+3. **RECOMMENDATIONS**: General health recommendations and self-care suggestions
+4. **RED FLAGS**: Any symptoms that require immediate medical attention
+5. **NEXT STEPS**: Recommended actions and follow-up care
+
+Please format your response clearly and include appropriate medical disclaimers."""
+    
+    try:
+        result = await llm_service.generate_response(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.3,
+            max_tokens=800
+        )
+        
+        if result.get("success"):
+            return result.get("response", "I need more information to provide meaningful recommendations. Please provide additional details about your symptoms.")
+        else:
+            return "I'm unable to generate recommendations at this time. Please consult with a healthcare provider for proper evaluation of your symptoms."
+            
+    except Exception as e:
+        logger.error(f"Error generating diagnosis: {e}")
+        return "I'm unable to generate recommendations at this time. Please consult with a healthcare provider for proper evaluation of your symptoms."
+
+
 def _generate_fallback_welcome_response(initial_message: str, chief_complaint: Optional[str] = None) -> str:
     """Fallback welcome response when LLM is not available."""
     return f"""Hello! I'm your medical assistant and I'm here to help you document your symptoms for healthcare providers.
@@ -591,118 +871,6 @@ def _generate_fallback_smart_response(user_message: str, conversation_history: L
         return "Thank you for rating your symptoms. Are there any triggers that make them better or worse?"
     else:
         return "Thank you for that information. Could you tell me more about when these symptoms started and what they feel like?"
-
-
-def _generate_welcome_response(initial_message: str, chief_complaint: Optional[str] = None) -> str:
-    """Generate an intelligent welcome response based on the user's initial message."""
-    
-    # Extract key symptoms/conditions from the message
-    message_lower = initial_message.lower()
-    complaint_lower = (chief_complaint or "").lower()
-    
-    # Common response patterns based on symptoms
-    if any(word in message_lower for word in ["pain", "hurt", "ache", "sore"]):
-        if any(word in message_lower for word in ["head", "headache"]):
-            return """Hello! I understand you're experiencing headache pain. I'm here to help you describe your symptoms in detail so we can create a comprehensive report for your healthcare provider.
-
-Let me ask a few questions to better understand your situation:
-
-• When did your headache start?
-• How would you rate the pain intensity on a scale of 1-10?
-• Can you describe the type of pain (throbbing, sharp, dull, pressure)?
-• What makes it better or worse?
-
-Please remember, I'm not a doctor and cannot provide medical diagnoses. My role is to help organize your symptoms for your healthcare provider."""
-
-        elif any(word in message_lower for word in ["back", "spine"]):
-            return """Hello! I see you're experiencing back pain. I'm here to help gather detailed information about your symptoms for your healthcare provider.
-
-To better understand your back pain, could you tell me:
-
-• Where exactly is the pain located (lower back, upper back, between shoulder blades)?
-• When did it start and what were you doing when it began?
-• How would you rate the pain on a scale of 1-10?
-• Does the pain radiate to other areas (legs, arms, etc.)?
-
-I'll help you organize this information into a clear report, but please remember that I cannot provide medical diagnoses."""
-
-    elif any(word in message_lower for word in ["fever", "temperature", "hot", "chills"]):
-        return """Hello! I understand you're dealing with fever symptoms. I'm here to help document your symptoms for your healthcare provider.
-
-Let's gather some important details:
-
-• What is your current temperature if you've measured it?
-• When did the fever start?
-• Are you experiencing any other symptoms along with the fever (headache, body aches, nausea)?
-• Have you taken any medications for the fever?
-
-Please note: If your fever is very high (over 103°F/39.4°C) or you're having difficulty breathing, please seek immediate medical attention."""
-
-    elif any(word in message_lower for word in ["cough", "breathing", "chest"]):
-        return """Hello! I see you're having respiratory symptoms. I'm here to help document these symptoms for your healthcare provider.
-
-To better understand your condition, could you describe:
-
-• When did your cough start?
-• Is it a dry cough or are you producing phlegm?
-• Are you experiencing any shortness of breath or chest pain?
-• Do you have any fever or other symptoms?
-
-If you're having severe difficulty breathing or chest pain, please seek immediate medical attention. Otherwise, I'll help you organize your symptoms into a comprehensive report."""
-
-    else:
-        # Generic welcome for other complaints
-        return f"""Hello! I'm your medical assistant and I'm here to help you describe your symptoms and gather information for your healthcare provider.
-
-I see you mentioned: "{chief_complaint or initial_message[:100]}..."
-
-Please note that I'm not a doctor and cannot provide medical diagnoses. My role is to help you organize your symptoms into a clear, comprehensive report that you can share with your healthcare provider.
-
-Could you tell me more about:
-• When did these symptoms start?
-• How severe are they on a scale of 1-10?
-• What makes them better or worse?
-• Any other symptoms you're experiencing?
-
-Let's work together to document everything properly."""
-
-
-def _generate_smart_response(user_message: str, conversation_history: List[Dict]) -> str:
-    """Generate an intelligent response based on user input and conversation context."""
-    
-    message_lower = user_message.lower()
-    message_count = len(conversation_history)
-    
-    # Analyze the type of response needed
-    if any(word in message_lower for word in ["yes", "yeah", "yep", "correct"]):
-        return "Thank you for confirming that. Could you provide more details about this symptom? For example, when did it start and how has it changed over time?"
-    
-    elif any(word in message_lower for word in ["no", "nope", "not really", "none"]):
-        return "I understand. Let's explore other aspects of your symptoms. Are there any other symptoms or concerns you'd like to discuss?"
-    
-    elif any(word in message_lower for word in ["started", "began", "since"]):
-        return "Thank you for that timeline information. That's very helpful. Now, could you describe the severity or intensity of your symptoms? How would you rate them on a scale of 1-10?"
-    
-    elif any(number in message_lower for number in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]):
-        return "Thank you for rating your symptoms. That helps me understand the severity. Are there any specific triggers or activities that make your symptoms better or worse?"
-    
-    elif any(word in message_lower for word in ["better", "worse", "triggers", "helps", "relief"]):
-        return "That's important information about what affects your symptoms. Are you currently taking any medications or treatments for these symptoms? Also, have you noticed any other symptoms occurring along with your main concern?"
-    
-    elif any(word in message_lower for word in ["medication", "medicine", "pills", "treatment"]):
-        return "Thank you for sharing that medication information. It's important to include current treatments in your medical record. Is there anything else about your symptoms that you think would be important for your healthcare provider to know?"
-    
-    elif message_count < 3:
-        # Early in conversation, ask basic follow-up questions
-        return "Thank you for sharing that information. To help create a complete picture for your healthcare provider, could you tell me when these symptoms started and how you would rate their severity on a scale of 1-10?"
-    
-    elif message_count < 6:
-        # Mid conversation, gather more specific details
-        return "That's helpful detail. Are there any other symptoms occurring along with your main concern? Also, have you tried anything that makes the symptoms better or worse?"
-    
-    else:
-        # Later in conversation, wrap up and summarize
-        return "Thank you for providing all that detailed information. Based on what you've shared, I'm building a comprehensive symptom report for your healthcare provider. Is there anything else about your symptoms or health concerns that you'd like to add before we summarize everything?"
 
 
 def _generate_followup_questions(conversation_history: List[Dict]) -> str:
@@ -738,3 +906,157 @@ def _generate_followup_questions(conversation_history: List[Dict]) -> str:
     ])
     
     return "Here are some follow-up questions that might help gather more information:\n\n" + "\n".join(questions) 
+
+
+async def _generate_medical_report_llm(
+    llm_service: LLMService, conversation_history: List[Dict], user: User
+) -> Dict[str, Any]:
+    """Generate medical report using LLM based on conversation history."""
+    
+    # Format conversation for medical report
+    conversation_text = ""
+    for msg in conversation_history:
+        role = "Patient" if msg["role"] == "user" else "AI Assistant"
+        conversation_text += f"{role}: {msg['content']}\n\n"
+    
+    system_prompt = f"""You are a medical documentation specialist. Generate a formal medical report based on the patient conversation below.
+
+Patient Information:
+- Name: {user.full_name or 'Patient'}
+- Email: {user.email}
+- Age: {user.age or 'Not specified'}
+- Gender: {user.gender or 'Not specified'}
+
+Create a structured medical report with the following sections:
+
+1. CHIEF COMPLAINT
+2. HISTORY OF PRESENT ILLNESS
+3. SYMPTOMS SUMMARY
+4. CLINICAL IMPRESSION
+5. RECOMMENDATIONS FOR HEALTHCARE PROVIDER
+6. URGENCY ASSESSMENT
+
+Format the response as structured text suitable for a medical record. Be professional, objective, and include relevant timeline information. Focus on medical facts and observations.
+
+Conversation:
+{conversation_text}
+
+Provide a comprehensive medical report based on this conversation."""
+
+    try:
+        report_text = await llm_service.generate_response(conversation_text, system_prompt)
+        
+        # Extract key information for structured data
+        key_findings = []
+        recommendations = []
+        urgency_level = "medium"
+        
+        # Simple extraction logic (could be enhanced with more sophisticated parsing)
+        if "urgent" in report_text.lower() or "emergency" in report_text.lower():
+            urgency_level = "high"
+        elif "routine" in report_text.lower() or "stable" in report_text.lower():
+            urgency_level = "low"
+            
+        # Extract symptoms mentioned
+        for msg in conversation_history:
+            if msg["role"] == "user":
+                content_lower = msg["content"].lower()
+                if any(symptom in content_lower for symptom in ["pain", "headache", "fever", "nausea", "fatigue", "dizziness"]):
+                    key_findings.append(f"Patient reported: {msg['content'][:100]}...")
+        
+        # Generate basic recommendations
+        recommendations = [
+            "Recommend follow-up with primary care physician",
+            "Consider further diagnostic evaluation as clinically indicated",
+            "Patient education provided regarding symptom monitoring"
+        ]
+        
+        return {
+            "content": report_text,
+            "summary": f"Medical consultation report for {user.full_name or 'patient'} based on symptom discussion",
+            "key_findings": key_findings,
+            "recommendations": recommendations,
+            "urgency_level": urgency_level
+        }
+        
+    except Exception as e:
+        logger.error(f"LLM medical report generation failed: {str(e)}")
+        raise
+
+
+def _generate_fallback_medical_report(conversation_history: List[Dict], user: User) -> Dict[str, Any]:
+    """Generate fallback medical report when LLM is not available."""
+    
+    # Count messages and extract basic info
+    user_messages = [msg for msg in conversation_history if msg["role"] == "user"]
+    ai_messages = [msg for msg in conversation_history if msg["role"] == "assistant"]
+    
+    # Extract potential symptoms from user messages
+    symptoms_mentioned = []
+    concerns_mentioned = []
+    
+    for msg in user_messages:
+        content_lower = msg["content"].lower()
+        # Simple keyword detection
+        if any(word in content_lower for word in ["pain", "hurt", "ache"]):
+            symptoms_mentioned.append("Pain symptoms reported")
+        if any(word in content_lower for word in ["fever", "temperature", "hot"]):
+            symptoms_mentioned.append("Fever/temperature concerns")
+        if any(word in content_lower for word in ["headache", "head"]):
+            symptoms_mentioned.append("Headache symptoms")
+        if any(word in content_lower for word in ["nausea", "sick", "vomit"]):
+            symptoms_mentioned.append("Nausea/digestive symptoms")
+        if any(word in content_lower for word in ["tired", "fatigue", "exhausted"]):
+            symptoms_mentioned.append("Fatigue symptoms")
+    
+    # Generate basic report content
+    report_content = f"""MEDICAL CONSULTATION REPORT
+
+Patient Information:
+- Name: {user.full_name or 'Patient'}
+- Email: {user.email}
+- Age: {user.age or 'Not specified'}
+- Gender: {user.gender or 'Not specified'}
+
+CONSULTATION SUMMARY:
+This report is based on a digital health consultation with {len(user_messages)} patient messages and {len(ai_messages)} AI assistant responses.
+
+CHIEF COMPLAINT:
+{user_messages[0]["content"] if user_messages else "Patient initiated health consultation"}
+
+SYMPTOMS DOCUMENTED:
+{chr(10).join([f"- {symptom}" for symptom in symptoms_mentioned]) if symptoms_mentioned else "- General health inquiry"}
+
+CONSULTATION NOTES:
+- Interactive health discussion completed
+- Symptom information gathered through structured conversation
+- Patient provided detailed descriptions of concerns
+
+CLINICAL IMPRESSION:
+Based on the consultation, the patient has presented with health concerns requiring professional medical evaluation.
+
+RECOMMENDATIONS:
+- Follow-up with primary care physician recommended
+- Consider in-person clinical evaluation
+- Continue monitoring symptoms as discussed
+- Patient educated on when to seek immediate care
+
+URGENCY ASSESSMENT: Routine follow-up recommended
+
+Note: This report is generated from an AI-assisted health consultation and should be reviewed by a qualified healthcare professional."""
+
+    key_findings = symptoms_mentioned if symptoms_mentioned else ["Patient completed health consultation"]
+    
+    recommendations = [
+        "Primary care physician follow-up recommended",
+        "Clinical evaluation for reported symptoms",
+        "Patient education provided during consultation"
+    ]
+    
+    return {
+        "content": report_content,
+        "summary": f"Health consultation report for {user.full_name or 'patient'}",
+        "key_findings": key_findings,
+        "recommendations": recommendations,
+        "urgency_level": "medium"
+    } 

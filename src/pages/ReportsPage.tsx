@@ -39,9 +39,9 @@ import {
   Chat as ChatIcon,
   Assessment as AssessmentIcon,
   MedicalServices as MedicalIcon,
-  Warning as WarningIcon,
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
+  Summarize as SummarizeIcon,
 } from '@mui/icons-material';
 import { useSnackbar } from '../contexts/SnackbarContext';
 import { reportsAPI } from '../services/api';
@@ -49,7 +49,7 @@ import { reportsAPI } from '../services/api';
 interface MedicalReport {
   id: number;
   title: string;
-  type: 'initial_consultation' | 'follow_up' | 'symptom_tracking';
+  type: 'initial_consultation' | 'follow_up' | 'symptom_tracking' | 'summary_report';
   status: 'completed' | 'pending' | 'in_progress';
   createdAt: string;
   conversationId: number;
@@ -73,11 +73,10 @@ const ReportsPage: React.FC = () => {
   const [reports, setReports] = useState<MedicalReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-
+  const [generatingSummary, setGeneratingSummary] = useState(false);
 
   // Load reports from backend
-  const loadReports = async () => {
+  const loadReports = React.useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -116,12 +115,12 @@ const ReportsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, typeFilter]);
 
   // Load reports on component mount and when filters change
   React.useEffect(() => {
     loadReports();
-  }, [statusFilter, typeFilter]);
+  }, [loadReports]);
 
   const filteredReports = reports.filter(report => {
     const matchesSearch = report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -157,6 +156,7 @@ const ReportsPage: React.FC = () => {
       case 'initial_consultation': return <MedicalIcon />;
       case 'follow_up': return <ScheduleIcon />;
       case 'symptom_tracking': return <AssessmentIcon />;
+      case 'summary_report': return <SummarizeIcon />;
       default: return <ReportIcon />;
     }
   };
@@ -166,6 +166,7 @@ const ReportsPage: React.FC = () => {
       case 'initial_consultation': return 'Initial Consultation';
       case 'follow_up': return 'Follow-up Report';
       case 'symptom_tracking': return 'Symptom Tracking';
+      case 'summary_report': return 'Summary Report';
       default: return 'Medical Report';
     }
   };
@@ -183,26 +184,19 @@ const ReportsPage: React.FC = () => {
     showMessage(`Opening conversation #${conversationId} in Chat section`, 'info');
   };
 
-  const handleGenerateReport = async (conversationId: number, reportType: string = 'initial_consultation') => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/reports/conversation/${conversationId}/generate?report_type=${reportType}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
-      });
 
-      if (response.ok) {
-        const result = await response.json();
-        showMessage(`Report "${result.title}" generated successfully!`, 'success');
-        loadReports(); // Refresh the reports list
-      } else {
-        throw new Error('Failed to generate report');
-      }
+
+  const handleGenerateSummaryReport = async () => {
+    try {
+      setGeneratingSummary(true);
+      const result = await reportsAPI.generateSummaryReport();
+      showMessage(`Summary report "${result.title}" generated successfully! Analyzed ${result.conversations_analyzed} conversations.`, 'success');
+      loadReports(); // Refresh the reports list
     } catch (error) {
-      console.error('Error generating report:', error);
-      showMessage('Failed to generate report. Please try again.', 'error');
+      console.error('Error generating summary report:', error);
+      showMessage('Failed to generate summary report. Please try again.', 'error');
+    } finally {
+      setGeneratingSummary(false);
     }
   };
 
@@ -233,11 +227,30 @@ const ReportsPage: React.FC = () => {
             Reports generated from your medical consultations
           </Typography>
         </Box>
-        <Chip
-          label={`${filteredReports.length} Report${filteredReports.length !== 1 ? 's' : ''}`}
-          variant="outlined"
-          color="primary"
-        />
+        <Box display="flex" alignItems="center" gap={2}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<SummarizeIcon />}
+            onClick={handleGenerateSummaryReport}
+            disabled={generatingSummary || loading}
+            sx={{ minWidth: 200 }}
+          >
+            {generatingSummary ? (
+              <>
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+                Generating...
+              </>
+            ) : (
+              'Generate Summary Report'
+            )}
+          </Button>
+          <Chip
+            label={`${filteredReports.length} Report${filteredReports.length !== 1 ? 's' : ''}`}
+            variant="outlined"
+            color="primary"
+          />
+        </Box>
       </Box>
 
       {/* Search and Filters */}
@@ -289,6 +302,7 @@ const ReportsPage: React.FC = () => {
                 <MenuItem value="initial_consultation">Initial Consultation</MenuItem>
                 <MenuItem value="follow_up">Follow-up Report</MenuItem>
                 <MenuItem value="symptom_tracking">Symptom Tracking</MenuItem>
+                <MenuItem value="summary_report">Summary Report</MenuItem>
               </Select>
             </FormControl>
           </Grid>

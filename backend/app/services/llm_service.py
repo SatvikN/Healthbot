@@ -4,9 +4,28 @@ import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import logging
+import re
 from ..config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_llm_response(response_text: str) -> str:
+    """Clean up LLM response by removing unnecessary quotations and formatting."""
+    if not response_text:
+        return response_text
+    
+    # Remove surrounding quotes from the entire response
+    response_text = response_text.strip()
+    if (response_text.startswith('"') and response_text.endswith('"')) or \
+       (response_text.startswith("'") and response_text.endswith("'")):
+        response_text = response_text[1:-1]
+    
+    # Remove common formatting artifacts
+    response_text = response_text.replace('\\"', '"')  # Unescape quotes
+    response_text = response_text.replace("\\'", "'")   # Unescape single quotes
+    
+    return response_text.strip()
 
 
 class LLMService:
@@ -91,9 +110,13 @@ class LLMService:
             
             if response.status_code == 200:
                 result = response.json()
+                # Clean the response text
+                raw_response = result.get("response", "")
+                cleaned_response = _clean_llm_response(raw_response)
+                
                 return {
                     "success": True,
-                    "response": result.get("response", ""),
+                    "response": cleaned_response,
                     "model": self.model,
                     "processing_time": processing_time,
                     "total_duration": result.get("total_duration", 0),

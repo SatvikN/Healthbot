@@ -13,7 +13,7 @@ import {
   Person as PersonIcon,
   SmartToy as BotIcon,
   MedicalServices as MedicalIcon,
-  QuestionAnswer as QuestionIcon,
+  Description as ReportIcon,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import { format } from 'date-fns';
@@ -24,38 +24,13 @@ interface ChatInterfaceProps {
   conversation: Conversation;
   isLoading?: boolean;
   onQuickReply?: (message: string) => void;
+  onRequestDiagnosis?: () => void;
+  isDiagnosisLoading?: boolean;
+  onGenerateReport?: () => void;
+  isReportLoading?: boolean;
 }
 
-// Quick reply suggestions based on conversation context
-const getQuickReplySuggestions = (lastMessage?: Message): string[] => {
-  if (!lastMessage || lastMessage.message_type === 'user') return [];
-  
-  const content = lastMessage.content.toLowerCase();
-  
-  if (content.includes('when did') || content.includes('timeline')) {
-    return ['Started yesterday', 'Started a few days ago', 'Started last week', 'About a month ago'];
-  }
-  
-  if (content.includes('scale of 1-10') || content.includes('severity')) {
-    return ['Mild (2-3)', 'Moderate (4-6)', 'Severe (7-8)', 'Very severe (9-10)'];
-  }
-  
-  if (content.includes('better or worse') || content.includes('triggers')) {
-    return ['Rest helps', 'Movement helps', 'Medication helps', 'Gets worse with activity'];
-  }
-  
-  if (content.includes('other symptoms') || content.includes('additional')) {
-    return ['No other symptoms', 'Yes, also have fever', 'Yes, also nauseous', 'Yes, feeling tired'];
-  }
-  
-  if (content.includes('medications') || content.includes('treatment')) {
-    return ['Taking ibuprofen', 'Taking acetaminophen', 'No medications', 'Prescription medications'];
-  }
-  
-  return ['Yes', 'No', 'Sometimes', 'Not sure'];
-};
-
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, onQuickReply }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, onQuickReply, onRequestDiagnosis, isDiagnosisLoading, onGenerateReport, isReportLoading }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -288,48 +263,70 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, 
               </Fade>
             )}
 
-            {/* Quick Reply Suggestions */}
-            {!isLoading && (() => {
-              const lastMessage = conversation.messages && conversation.messages.length > 0 
-                ? conversation.messages[conversation.messages.length - 1] 
-                : undefined;
-              const quickReplies = getQuickReplySuggestions(lastMessage);
-              
-              return quickReplies.length > 0 && lastMessage?.message_type === 'assistant' && onQuickReply ? (
-                <Fade in={true} timeout={500}>
-                  <Box mx={1} mb={2}>
-                    <Box display="flex" alignItems="center" gap={1} mb={1}>
-                      <QuestionIcon fontSize="small" color="action" />
-                      <Typography variant="caption" color="text.secondary">
-                        Quick replies:
-                      </Typography>
-                    </Box>
-                    <Box display="flex" flexWrap="wrap" gap={1}>
-                      {quickReplies.map((reply, idx) => (
-                        <Button
-                          key={idx}
-                          variant="outlined"
-                          size="small"
-                          onClick={() => onQuickReply(reply)}
-                          sx={{
-                            borderRadius: 2,
-                            textTransform: 'none',
-                            minHeight: 32,
-                            fontSize: '0.875rem',
-                            '&:hover': {
-                              bgcolor: 'primary.light',
-                              borderColor: 'primary.main',
-                            },
-                          }}
-                        >
-                          {reply}
-                        </Button>
-                      ))}
-                    </Box>
+            {/* Medical Analysis Buttons */}
+            {!isLoading && conversation.messages && conversation.messages.length > 2 && (onRequestDiagnosis || onGenerateReport) && (
+              <Fade in={true} timeout={500}>
+                <Box mx={1} mb={2}>
+                  <Box display="flex" alignItems="center" gap={1} mb={1}>
+                    <MedicalIcon fontSize="small" color="primary" />
+                    <Typography variant="caption" color="text.secondary">
+                      Ready for medical analysis:
+                    </Typography>
                   </Box>
-                </Fade>
-              ) : null;
-            })()}
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    {/* Diagnosis Button */}
+                    {onRequestDiagnosis && (
+                      <Button
+                        variant="contained"
+                        size="medium"
+                        onClick={onRequestDiagnosis}
+                        disabled={isDiagnosisLoading || isReportLoading}
+                        startIcon={isDiagnosisLoading ? <CircularProgress size={16} /> : <MedicalIcon />}
+                        sx={{
+                          borderRadius: 2,
+                          textTransform: 'none',
+                          minHeight: 40,
+                          fontSize: '0.875rem',
+                          fontWeight: 600,
+                          boxShadow: 2,
+                          '&:hover': {
+                            boxShadow: 4,
+                          },
+                        }}
+                      >
+                        {isDiagnosisLoading ? 'Analyzing...' : 'Provide Diagnosis & Treatment Recommendations'}
+                      </Button>
+                    )}
+                    
+                    {/* Medical Report Button */}
+                    {onGenerateReport && (
+                      <Button
+                        variant="outlined"
+                        size="medium"
+                        onClick={onGenerateReport}
+                        disabled={isDiagnosisLoading || isReportLoading}
+                        startIcon={isReportLoading ? <CircularProgress size={16} /> : <ReportIcon />}
+                        sx={{
+                          borderRadius: 2,
+                          textTransform: 'none',
+                          minHeight: 40,
+                          fontSize: '0.875rem',
+                          fontWeight: 600,
+                          borderColor: 'primary.main',
+                          color: 'primary.main',
+                          '&:hover': {
+                            backgroundColor: 'primary.light',
+                            borderColor: 'primary.dark',
+                          },
+                        }}
+                      >
+                        {isReportLoading ? 'Generating...' : 'Generate Medical Report'}
+                      </Button>
+                    )}
+                  </Box>
+                </Box>
+              </Fade>
+            )}
           </>
         )}
 

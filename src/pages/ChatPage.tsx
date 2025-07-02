@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -7,53 +7,83 @@ import {
   Button,
   TextField,
   CircularProgress,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  Drawer,
   IconButton,
-  Collapse,
-  Tooltip,
+  Divider,
 } from '@mui/material';
 import { 
-  Add as AddIcon, 
   Send as SendIcon,
-  ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon,
-  Chat as ChatIcon,
-  Edit as EditIcon,
-  Check as CheckIcon,
-  Close as CloseIcon,
+  History as HistoryIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
-import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useMutation, useQuery } from 'react-query';
 
-import { Conversation } from '../services/api';
 import { useSnackbar } from '../contexts/SnackbarContext';
 import ChatInterface from '../components/Chat/ChatInterface';
 import StartConversationDialog from '../components/Chat/StartConversationDialog';
 
-const ChatPage: React.FC = () => {
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [startDialogOpen, setStartDialogOpen] = useState(false);
-  const [message, setMessage] = useState('');
+interface Message {
+  id: number;
+  content: string;
+  message_type: 'user' | 'assistant';
+  created_at: string;
+}
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [editingConversationId, setEditingConversationId] = useState<number | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const queryClient = useQueryClient();
+interface ActiveConversation {
+  id: number;
+  title: string;
+  messages: Message[];
+}
+
+interface ConversationListItem {
+  id: number;
+  title: string;
+  started_at: string;
+  message_count: number;
+}
+
+const ChatPage: React.FC = () => {
+  const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(null);
+  const [startDialogOpen, setStartDialogOpen] = useState(false);
+  const [conversationsDrawerOpen, setConversationsDrawerOpen] = useState(false);
+  const [message, setMessage] = useState('');
   const { showMessage } = useSnackbar();
 
+  // Load conversations list
+  const { data: conversations, refetch: refetchConversations } = useQuery(
+    'conversations',
+    async () => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.getConversations();
+    },
+    {
+      onError: (error: any) => {
+        console.error('Error loading conversations:', error);
+      },
+    }
+  );
 
-
-  // Fetch conversations from API
-  const {
-    data: conversations = [],
-    isLoading: conversationsLoading,
-  } = useQuery('conversations', async () => {
-    const { chatAPI } = await import('../services/api');
-    return chatAPI.getConversations();
-  }, {
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
-    cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-    refetchOnWindowFocus: false, // Don't refetch when user focuses window
-    refetchOnReconnect: false, // Don't refetch on reconnect
-  });
+  // Load specific conversation
+  const loadConversation = async (conversationId: number) => {
+    try {
+      const { chatAPI } = await import('../services/api');
+      const conversation = await chatAPI.getConversation(conversationId);
+      
+      setActiveConversation({
+        id: conversation.id,
+        title: conversation.title || `Conversation ${conversation.id}`,
+        messages: conversation.messages || [],
+      });
+      setConversationsDrawerOpen(false);
+    } catch (error: any) {
+      console.error('Error loading conversation:', error);
+      showMessage('Failed to load conversation', 'error');
+    }
+  };
 
   // Send message to API
   const sendMessageMutation = useMutation(
@@ -63,9 +93,9 @@ const ChatPage: React.FC = () => {
     },
     {
       onSuccess: (response: any) => {
-        if (selectedConversation) {
-          // Handle the new response format that includes both user and AI messages
-          const newMessages = [];
+        if (activeConversation) {
+          // Handle the response format that includes both user and AI messages
+          const newMessages: Message[] = [];
           
           if (response.user_message) {
             newMessages.push({
@@ -85,18 +115,34 @@ const ChatPage: React.FC = () => {
             });
           }
           
-          const updatedConversation = {
-            ...selectedConversation,
-            messages: [...(selectedConversation.messages || []), ...newMessages],
-          };
-          setSelectedConversation(updatedConversation);
-          
+          setActiveConversation(prev => prev ? {
+            ...prev,
+            messages: [...prev.messages, ...newMessages],
+          } : null);
         }
-        // No need to invalidate conversations - we're updating state directly
+        // Refresh conversations list to update message count
+        refetchConversations();
       },
       onError: (error: any) => {
-        showMessage('Failed to send message. Please try again.', 'error');
         console.error('Error sending message:', error);
+        let errorMessage = 'Failed to send message. Please try again.';
+        
+        if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || error.response.data?.message;
+          
+          if (status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (status === 500) {
+            errorMessage = `Server error: ${detail || 'Internal server error occurred.'}`;
+          } else if (detail) {
+            errorMessage = `Error (${status}): ${detail}`;
+          }
+        } else if (error.request) {
+          errorMessage = 'Network error. Please check your connection.';
+        }
+        
+        showMessage(errorMessage, 'error');
       },
     }
   );
@@ -109,13 +155,10 @@ const ChatPage: React.FC = () => {
     },
     {
       onSuccess: (response: any, variables) => {
-        // Handle the new response format from start conversation
-        const newConversation: Conversation = {
+        // Handle the response format from start conversation
+        const newConversation: ActiveConversation = {
           id: response.conversation_id,
           title: `Medical consultation - ${new Date().toLocaleDateString()}`,
-          chief_complaint: variables.chiefComplaint,
-          status: 'active',
-          started_at: new Date().toISOString(),
           messages: [
             {
               id: response.user_message.id,
@@ -132,81 +175,156 @@ const ChatPage: React.FC = () => {
           ],
         };
         
-        setSelectedConversation(newConversation);
+        setActiveConversation(newConversation);
         setStartDialogOpen(false);
-        // Only invalidate conversations list when a new conversation is created
-        queryClient.invalidateQueries('conversations');
         showMessage('New consultation started', 'success');
+        // Refresh conversations list
+        refetchConversations();
       },
       onError: (error: any) => {
-        showMessage('Failed to start conversation. Please try again.', 'error');
         console.error('Error starting conversation:', error);
+        let errorMessage = 'Failed to start conversation. Please try again.';
+        
+        if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || error.response.data?.message;
+          
+          if (status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (status === 403) {
+            errorMessage = 'Access denied. Please check your permissions.';
+          } else if (status === 500) {
+            errorMessage = `Server error: ${detail || 'Internal server error occurred.'}`;
+          } else if (detail) {
+            errorMessage = `Error (${status}): ${detail}`;
+          } else {
+            errorMessage = `Server error (${status}). Please try again.`;
+          }
+        } else if (error.request) {
+          errorMessage = 'Network error. Please check your connection and ensure the server is running.';
+        } else if (error.message) {
+          errorMessage = `Error: ${error.message}`;
+        }
+        
+        showMessage(errorMessage, 'error');
       },
     }
   );
 
-  // Title update mutation
-  const updateTitleMutation = useMutation(
-    async ({ conversationId, title }: { conversationId: number; title: string }) => {
+  // Diagnosis generation mutation
+  const generateDiagnosisMutation = useMutation(
+    async (conversationId: number) => {
       const { chatAPI } = await import('../services/api');
-      return chatAPI.updateConversationTitle(conversationId, title);
+      return chatAPI.generateDiagnosisRecommendations(conversationId);
     },
     {
-      onSuccess: (response: any, variables) => {
-        // Update selected conversation if it's the one being edited
-        if (selectedConversation?.id === variables.conversationId) {
-          setSelectedConversation(prev => 
-            prev ? { ...prev, title: variables.title } : null
-          );
+      onSuccess: (response: any) => {
+        showMessage('Diagnosis and treatment recommendations generated successfully!', 'success');
+        
+        // Add the diagnosis message to the conversation
+        if (response && response.diagnosis_message && activeConversation) {
+          const diagnosisMessage = {
+            id: response.diagnosis_message.id,
+            content: response.diagnosis_message.content,
+            message_type: 'assistant' as const,
+            created_at: response.diagnosis_message.created_at,
+          };
+          
+          setActiveConversation(prev => prev ? {
+            ...prev,
+            messages: [...prev.messages, diagnosisMessage],
+          } : null);
+        }
+      },
+      onError: (error: any) => {
+        console.error('Error generating diagnosis:', error);
+        let errorMessage = 'Failed to generate diagnosis recommendations. Please try again.';
+        
+        if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || error.response.data?.message;
+          
+          if (status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (status === 500) {
+            errorMessage = `Server error: ${detail || 'Internal server error occurred.'}`;
+          } else if (detail) {
+            errorMessage = `Error (${status}): ${detail}`;
+          }
+        } else if (error.request) {
+          errorMessage = 'Network error. Please check your connection.';
         }
         
-        setEditingConversationId(null);
-        setEditingTitle('');
-        // Optimistic update - only invalidate conversations when necessary
-        queryClient.setQueryData('conversations', (oldData: any) => {
-          if (!oldData) return oldData;
-          return oldData.map((conv: any) => 
-            conv.id === variables.conversationId 
-              ? { ...conv, title: variables.title }
-              : conv
-          );
-        });
-        showMessage('Title updated successfully', 'success');
+        showMessage(errorMessage, 'error');
       },
-      onError: () => {
-        showMessage('Failed to update title', 'error');
+    }
+  );
+
+  // Medical report generation mutation
+  const generateMedicalReportMutation = useMutation(
+    async (conversationId: number) => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.generateMedicalReport(conversationId);
+    },
+    {
+      onSuccess: (response: any) => {
+        showMessage('✅ Medical report generated successfully and saved to your Reports section!', 'success');
+      },
+      onError: (error: any) => {
+        console.error('Error generating medical report:', error);
+        let errorMessage = 'Failed to generate medical report. Please try again.';
+        
+        if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || error.response.data?.message;
+          
+          if (status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (status === 500) {
+            errorMessage = `Server error: ${detail || 'Internal server error occurred.'}`;
+          } else if (detail) {
+            errorMessage = `Error (${status}): ${detail}`;
+          }
+        } else if (error.request) {
+          errorMessage = 'Network error. Please check your connection.';
+        }
+        
+        showMessage(errorMessage, 'error');
       },
     }
   );
 
   const sendMessage = (messageText: string) => {
-    if (!selectedConversation || !messageText.trim()) return;
-
-    sendMessageMutation.mutate({
-      conversationId: selectedConversation.id,
-      message: messageText.trim(),
-    });
+    if (activeConversation) {
+      sendMessageMutation.mutate({
+        conversationId: activeConversation.id,
+        message: messageText,
+      });
+    }
   };
 
   const handleSendMessage = () => {
-    if (!message.trim()) return;
-    sendMessage(message);
-    setMessage('');
+    if (message.trim() && activeConversation) {
+      sendMessage(message.trim());
+      setMessage('');
+    }
   };
 
   const handleQuickReply = (replyMessage: string) => {
     sendMessage(replyMessage);
   };
 
-  // Auto-select first conversation if none selected
-  useEffect(() => {
-    if (!selectedConversation && conversations.length > 0) {
-      setSelectedConversation(conversations[0]);
+  const handleRequestDiagnosis = () => {
+    if (activeConversation) {
+      generateDiagnosisMutation.mutate(activeConversation.id);
     }
-  }, [conversations, selectedConversation]);
+  };
 
-  // Memoize filtered conversations to prevent re-renders
-  const memoizedConversations = useMemo(() => conversations, [conversations]);
+  const handleGenerateReport = () => {
+    if (activeConversation) {
+      generateMedicalReportMutation.mutate(activeConversation.id);
+    }
+  };
 
   const handleStartConversation = (chiefComplaint: string) => {
     startConversationMutation.mutate({ chiefComplaint });
@@ -219,391 +337,187 @@ const ChatPage: React.FC = () => {
     }
   };
 
-  const handleStartEditTitle = (conversation: Conversation) => {
-    setEditingConversationId(conversation.id);
-    setEditingTitle(conversation.title || conversation.chief_complaint || 'Consultation');
+  const handleNewConversation = () => {
+    setStartDialogOpen(true);
   };
 
-  const handleSaveTitle = () => {
-    if (editingConversationId && editingTitle.trim()) {
-      updateTitleMutation.mutate({
-        conversationId: editingConversationId,
-        title: editingTitle.trim(),
-      });
-    }
+  const handleSelectConversation = (conversationId: number) => {
+    loadConversation(conversationId);
   };
-
-  const handleCancelEdit = () => {
-    setEditingConversationId(null);
-    setEditingTitle('');
-  };
-
-  if (conversationsLoading && conversations.length === 0) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 3, height: 'calc(100vh - 140px)' }}>
-      <Box sx={{ mb: 2 }}>
-        <Paper sx={{ p: 1.5, bgcolor: 'warning.light', borderRadius: 2 }}>
-          <Typography variant="caption" color="warning.dark" textAlign="center" display="block">
-            ⚠️ <strong>Medical Disclaimer:</strong> This is an AI assistant for informational purposes only. Always consult with healthcare professionals for medical advice.
+    <Container maxWidth="lg" sx={{ py: 3 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+        {/* Header with controls */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h4" component="h1">
+            Medical Chat Assistant
           </Typography>
-        </Paper>
-      </Box>
-
-      <Box display="flex" height="100%" gap={2}>
-        {/* Collapsible Conversations Sidebar */}
-        <Box
-          sx={{
-            display: 'flex',
-            transition: 'all 0.3s ease-in-out',
-            position: 'relative',
-          }}
-        >
-          {/* Sidebar Content */}
-          <Collapse
-            in={!sidebarCollapsed}
-            orientation="horizontal"
-            timeout={300}
-            sx={{
-              '& .MuiCollapse-wrapper': {
-                width: sidebarCollapsed ? 0 : 300,
-              },
-            }}
-          >
-            <Paper
-              sx={{
-                width: 300,
-                p: 2,
-                display: 'flex',
-                flexDirection: 'column',
-                bgcolor: 'background.paper',
-                height: '100%',
-              }}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              startIcon={<HistoryIcon />}
+              onClick={() => setConversationsDrawerOpen(true)}
             >
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="h6">Consultations</Typography>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={() => setStartDialogOpen(true)}
-                  disabled={startConversationMutation.isLoading}
-                >
-                  New
-                </Button>
-              </Box>
-
-              <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-                {memoizedConversations.length === 0 ? (
-                  <Box textAlign="center" py={4}>
-                    <Typography variant="body2" color="text.secondary">
-                      No consultations yet.
-                      <br />
-                      Start your first consultation!
-                    </Typography>
-                  </Box>
-                ) : (
-                  memoizedConversations.map((conv) => (
-                    <Paper
-                      key={conv.id}
-                      sx={{
-                        p: 2,
-                        mb: 1,
-                        cursor: editingConversationId === conv.id ? 'default' : 'pointer',
-                        bgcolor:
-                          selectedConversation?.id === conv.id
-                            ? 'primary.light'
-                            : 'background.default',
-                        '&:hover': {
-                          bgcolor: editingConversationId === conv.id ? (
-                            selectedConversation?.id === conv.id ? 'primary.light' : 'background.default'
-                          ) : 'primary.light',
-                        },
-                        transition: 'background-color 0.2s',
-                      }}
-                      onClick={() => editingConversationId !== conv.id && setSelectedConversation(conv)}
-                    >
-                      <Box display="flex" alignItems="center" justifyContent="space-between">
-                        {editingConversationId === conv.id ? (
-                          <Box display="flex" alignItems="center" gap={1} width="100%">
-                            <TextField
-                              value={editingTitle}
-                              onChange={(e) => setEditingTitle(e.target.value)}
-                              variant="outlined"
-                              size="small"
-                              fullWidth
-                              autoFocus
-                              onKeyPress={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSaveTitle();
-                                } else if (e.key === 'Escape') {
-                                  handleCancelEdit();
-                                }
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              sx={{ fontSize: '0.875rem' }}
-                            />
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSaveTitle();
-                              }}
-                              disabled={updateTitleMutation.isLoading}
-                              color="primary"
-                            >
-                              <CheckIcon fontSize="small" />
-                            </IconButton>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCancelEdit();
-                              }}
-                              disabled={updateTitleMutation.isLoading}
-                            >
-                              <CloseIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        ) : (
-                          <>
-                            <Box flexGrow={1}>
-                              <Typography variant="subtitle2" noWrap>
-                                {conv.title || conv.chief_complaint || 'Consultation'}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {new Date(conv.started_at).toLocaleDateString()}
-                              </Typography>
-                            </Box>
-                            <Tooltip title="Edit title">
-                              <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartEditTitle(conv);
-                                }}
-                                sx={{
-                                  opacity: 0.6,
-                                  '&:hover': {
-                                    opacity: 1,
-                                  },
-                                }}
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </>
-                        )}
-                      </Box>
-                    </Paper>
-                  ))
-                )}
-              </Box>
-            </Paper>
-          </Collapse>
-
-          {/* Toggle Button */}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              position: 'absolute',
-              right: -20,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              zIndex: 1000,
-            }}
-          >
-            <Tooltip title={sidebarCollapsed ? 'Show Consultations' : 'Hide Consultations'}>
-              <IconButton
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                sx={{
-                  bgcolor: 'background.paper',
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  '&:hover': {
-                    bgcolor: 'primary.light',
-                  },
-                  transition: 'all 0.2s',
-                  boxShadow: 2,
-                }}
-                size="small"
-              >
-                {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-              </IconButton>
-            </Tooltip>
+              Previous Chats
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleNewConversation}
+            >
+              New Chat
+            </Button>
           </Box>
+        </Box>
 
-          {/* Mini Sidebar when collapsed */}
-          {sidebarCollapsed && (
-            <Paper
+        {/* Main chat area */}
+        <Paper sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {activeConversation ? (
+            <>
+              {/* Chat header */}
+              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="h6" noWrap>
+                  {activeConversation.title}
+                </Typography>
+              </Box>
+
+              {/* Chat interface */}
+              <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+                <ChatInterface
+                  conversation={{
+                    id: activeConversation.id,
+                    title: activeConversation.title,
+                    chief_complaint: '',
+                    status: 'active',
+                    started_at: new Date().toISOString(),
+                    messages: activeConversation.messages,
+                  }}
+                  isLoading={sendMessageMutation.isLoading}
+                  onQuickReply={handleQuickReply}
+                  onRequestDiagnosis={handleRequestDiagnosis}
+                  isDiagnosisLoading={generateDiagnosisMutation.isLoading}
+                  onGenerateReport={handleGenerateReport}
+                  isReportLoading={generateMedicalReportMutation.isLoading}
+                />
+              </Box>
+            </>
+          ) : (
+            // Welcome screen
+            <Box
               sx={{
-                width: 60,
-                p: 1,
+                flexGrow: 1,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                bgcolor: 'background.paper',
-                height: '100%',
-                transition: 'all 0.3s ease-in-out',
+                justifyContent: 'center',
+                p: 4,
+                textAlign: 'center',
               }}
             >
-              <Tooltip title="New Consultation" placement="right">
-                <IconButton
-                  onClick={() => setStartDialogOpen(true)}
-                  disabled={startConversationMutation.isLoading}
-                  sx={{
-                    mb: 2,
-                    bgcolor: 'primary.main',
-                    color: 'white',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
-                    },
-                  }}
-                  size="small"
-                >
-                  <AddIcon />
-                </IconButton>
-              </Tooltip>
-
-              <Box sx={{ flexGrow: 1, overflowY: 'auto', width: '100%' }}>
-                {memoizedConversations.map((conv, index) => (
-                  <Tooltip
-                    key={conv.id}
-                    title={conv.title || conv.chief_complaint || 'Consultation'}
-                    placement="right"
-                  >
-                    <IconButton
-                      onClick={() => setSelectedConversation(conv)}
-                      sx={{
-                        width: '100%',
-                        height: 40,
-                        mb: 0.5,
-                        bgcolor:
-                          selectedConversation?.id === conv.id
-                            ? 'primary.light'
-                            : 'transparent',
-                        '&:hover': {
-                          bgcolor: 'primary.light',
-                        },
-                        borderRadius: 1,
-                      }}
-                      size="small"
-                    >
-                      <ChatIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                ))}
-              </Box>
-            </Paper>
-          )}
-        </Box>
-
-        {/* Chat Interface */}
-        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-          {selectedConversation ? (
-            <>
-              {/* Chat Header */}
-              <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="h6">
-                  {selectedConversation.title ||
-                    selectedConversation.chief_complaint ||
-                    'Medical Consultation'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Started: {new Date(selectedConversation.started_at).toLocaleString()}
-                </Typography>
-              </Paper>
-
-              {/* Messages Area */}
-              <ChatInterface
-                conversation={selectedConversation}
-                isLoading={sendMessageMutation.isLoading}
-                onQuickReply={handleQuickReply}
-              />
-
-              {/* Message Input */}
-              <Paper sx={{ p: 2, mt: 2 }}>
-                <Box display="flex" gap={1}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    maxRows={4}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Describe your symptoms or ask a question..."
-                    disabled={sendMessageMutation.isLoading}
-                    variant="outlined"
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 2,
-                        '&:hover fieldset': {
-                          borderColor: 'primary.main',
-                        },
-                        '&.Mui-focused fieldset': {
-                          borderColor: 'primary.main',
-                        },
-                      },
-                    }}
-                  />
-                  <Button
-                    variant="contained"
-                    onClick={handleSendMessage}
-                    disabled={!message.trim() || sendMessageMutation.isLoading}
-                    sx={{ minWidth: 60 }}
-                  >
-                    {sendMessageMutation.isLoading ? (
-                      <CircularProgress size={20} />
-                    ) : (
-                      <SendIcon />
-                    )}
-                  </Button>
-                </Box>
-              </Paper>
-            </>
-          ) : (
-            <Box
-              display="flex"
-              flexDirection="column"
-              justifyContent="center"
-              alignItems="center"
-              height="100%"
-              textAlign="center"
-            >
-              <Typography variant="h5" color="text.secondary" mb={2}>
-                Welcome to HealthBot
+              <Typography variant="h5" gutterBottom>
+                Welcome to your Medical Chat Assistant
               </Typography>
-              <Typography variant="body1" color="text.secondary" mb={4}>
-                Start a new consultation to describe your symptoms and get medical insights.
+              <Typography variant="body1" color="text.secondary" gutterBottom sx={{ mb: 4 }}>
+                Start a new conversation to get medical guidance, or view your previous consultations.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  startIcon={<AddIcon />}
+                  onClick={handleNewConversation}
+                >
+                  Start New Consultation
+                </Button>
+                {conversations && conversations.length > 0 && (
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    startIcon={<HistoryIcon />}
+                    onClick={() => setConversationsDrawerOpen(true)}
+                  >
+                    View Previous Chats ({conversations.length})
+                  </Button>
+                )}
+              </Box>
+            </Box>
+          )}
+        </Paper>
+
+        {/* Conversations Drawer */}
+        <Drawer
+          anchor="right"
+          open={conversationsDrawerOpen}
+          onClose={() => setConversationsDrawerOpen(false)}
+          PaperProps={{
+            sx: { width: 400 }
+          }}
+        >
+          <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Previous Conversations</Typography>
+            <IconButton
+              edge="end"
+              onClick={() => setConversationsDrawerOpen(false)}
+            >
+              ✕
+            </IconButton>
+          </Box>
+          <Divider />
+          
+          {conversations && conversations.length > 0 ? (
+            <List>
+              {conversations.map((conversation) => (
+                <ListItem key={conversation.id} disablePadding>
+                  <ListItemButton
+                    onClick={() => handleSelectConversation(conversation.id)}
+                    selected={activeConversation?.id === conversation.id}
+                  >
+                    <ListItemText
+                      primary={conversation.title}
+                      secondary={
+                        <Box>
+                          <Typography variant="caption" display="block">
+                            {new Date(conversation.started_at).toLocaleDateString()} at{' '}
+                            {new Date(conversation.started_at).toLocaleTimeString()}
+                          </Typography>
+                                                     <Typography variant="caption" color="text.secondary">
+                             {conversation.messages?.length || 0} messages
+                           </Typography>
+                        </Box>
+                      }
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Box sx={{ p: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">
+                No previous conversations found.
               </Typography>
               <Button
                 variant="contained"
-                size="large"
-                startIcon={<AddIcon />}
-                onClick={() => setStartDialogOpen(true)}
-                disabled={startConversationMutation.isLoading}
+                sx={{ mt: 2 }}
+                onClick={() => {
+                  setConversationsDrawerOpen(false);
+                  handleNewConversation();
+                }}
               >
-                Start New Consultation
+                Start Your First Chat
               </Button>
             </Box>
           )}
-        </Box>
-      </Box>
+        </Drawer>
 
-      {/* Start Conversation Dialog */}
-      <StartConversationDialog
-        open={startDialogOpen}
-        onClose={() => setStartDialogOpen(false)}
-        onSubmit={handleStartConversation}
-        isLoading={startConversationMutation.isLoading}
-      />
+        {/* Start Conversation Dialog */}
+        <StartConversationDialog
+          open={startDialogOpen}
+          onClose={() => setStartDialogOpen(false)}
+          onSubmit={handleStartConversation}
+          isLoading={startConversationMutation.isLoading}
+        />
+      </Box>
     </Container>
   );
 };

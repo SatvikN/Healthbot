@@ -172,12 +172,20 @@ export const chatAPI = {
     await api.put(`/api/chat/conversation/${conversationId}/complete`);
   },
 
-
-
   updateConversationTitle: async (conversationId: number, title: string): Promise<any> => {
     const response: AxiosResponse<any> = await api.put(`/api/chat/conversation/${conversationId}/title`, {
       title,
     });
+    return response.data;
+  },
+
+  generateDiagnosisRecommendations: async (conversationId: number): Promise<any> => {
+    const response: AxiosResponse<any> = await api.post(`/api/chat/conversation/${conversationId}/diagnosis`);
+    return response.data;
+  },
+
+  generateMedicalReport: async (conversationId: number): Promise<any> => {
+    const response: AxiosResponse<any> = await api.post(`/api/chat/conversation/${conversationId}/medical-report`);
     return response.data;
   },
 };
@@ -192,8 +200,6 @@ export const symptomsAPI = {
     const response: AxiosResponse<SymptomRecord[]> = await api.get('/api/symptoms/list', { params });
     return response.data;
   },
-
-
 
   analyzeSymptoms: async (symptomIds: number[], additionalContext?: string): Promise<any> => {
     const response = await api.post('/api/symptoms/analyze', {
@@ -225,8 +231,6 @@ export const reportsAPI = {
     return response.data;
   },
 
-
-
   getReportDetail: async (reportId: number): Promise<any> => {
     const response = await api.get(`/api/reports/detail/${reportId}`);
     return response.data;
@@ -245,6 +249,11 @@ export const reportsAPI = {
       healthcare_provider_email: email,
       message,
     });
+  },
+
+  generateSummaryReport: async (): Promise<any> => {
+    const response: AxiosResponse<any> = await api.post('/api/reports/generate-summary');
+    return response.data;
   },
 };
 

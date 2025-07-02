@@ -248,6 +248,73 @@ async def generate_report_from_conversation(
         )
 
 
+@router.post("/generate-summary")
+async def generate_summary_report(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate a comprehensive summary report based on all user conversations and medical history."""
+    
+    try:
+        # Get all user conversations
+        conversations = db.query(Conversation).filter(
+            Conversation.user_id == current_user.id
+        ).order_by(Conversation.created_at.desc()).all()
+        
+        if not conversations:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No conversations found to generate summary report"
+            )
+        
+        # Generate summary report content using LLM
+        async with LLMService() as llm_service:
+            report_data = await _generate_summary_report_llm(
+                llm_service=llm_service,
+                conversations=conversations,
+                user=current_user
+            )
+        
+        # Create and save summary report (using conversation_id of most recent conversation)
+        report = MedicalReport(
+            user_id=current_user.id,
+            conversation_id=conversations[0].id,  # Most recent conversation
+            title=report_data["title"],
+            type="summary_report",
+            status="completed",
+            summary=report_data["summary"],
+            key_findings=report_data["key_findings"],
+            recommendations=report_data["recommendations"],
+            urgency_level=report_data["urgency_level"],
+            file_size="3.2 MB",  # Simulated file size for summary report
+            ai_model_used="llama3.2:latest",
+            processing_time=report_data.get("processing_time", 0),
+            completed_at=datetime.utcnow()
+        )
+        
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        
+        return {
+            "id": report.id,
+            "title": report.title,
+            "status": "completed",
+            "message": "Summary report generated successfully",
+            "report": report.to_dict(),
+            "conversations_analyzed": len(conversations)
+        }
+        
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
+    except Exception as e:
+        logger.error(f"Error generating summary report: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate summary report: {str(e)}"
+        )
+
+
 async def _generate_report_content_llm(
     llm_service: LLMService,
     conversation: Conversation,
@@ -406,3 +473,142 @@ def _generate_report_content(db_session: Session, report_id: int):
     # This would be called as a background task
     # For now, we'll use the immediate generation approach
     pass 
+
+
+async def _generate_summary_report_llm(
+    llm_service: LLMService,
+    conversations: List[Conversation],
+    user: User
+) -> Dict[str, Any]:
+    """Generate comprehensive summary report content from all user conversations."""
+    
+    # Create system prompt for summary report
+    system_prompt = """You are a medical documentation AI creating a comprehensive patient summary report based on multiple consultations and medical history.
+
+Generate a structured JSON response with:
+{
+  "title": "Comprehensive Medical Summary - [Date]",
+  "summary": "Professional executive summary of all medical consultations and findings",
+  "key_findings": ["primary finding 1", "primary finding 2", "pattern 3"],
+  "recommendations": ["overall care recommendation 1", "specialist referral 2", "monitoring 3"],
+  "urgency_level": "low|medium|high"
+}
+
+Focus on:
+- Identifying recurring patterns across conversations
+- Consolidating key medical findings
+- Providing comprehensive care recommendations
+- Assessing overall urgency level based on all interactions
+- Creating actionable insights for healthcare providers
+- Highlighting any concerning trends or symptoms"""
+
+    # Format all conversations for analysis
+    summary_text = f"COMPREHENSIVE PATIENT SUMMARY ANALYSIS\n\n"
+    
+    # Add patient context
+    if user:
+        summary_text += "PATIENT INFORMATION:\n"
+        if user.full_name:
+            summary_text += f"Name: {user.full_name}\n"
+        if user.age:
+            summary_text += f"Age: {user.age}\n"
+        if user.gender:
+            summary_text += f"Gender: {user.gender}\n"
+        if user.medical_history:
+            summary_text += f"Medical History: {user.medical_history}\n"
+        if user.current_medications:
+            summary_text += f"Current Medications: {user.current_medications}\n"
+        if user.allergies:
+            summary_text += f"Allergies: {user.allergies}\n"
+        summary_text += "\n"
+    
+    # Add all conversations
+    summary_text += f"CONSULTATION HISTORY ({len(conversations)} consultations):\n\n"
+    
+    for i, conversation in enumerate(conversations, 1):
+        summary_text += f"CONSULTATION #{i} - {conversation.created_at.strftime('%Y-%m-%d')}:\n"
+        summary_text += f"Title: {conversation.title}\n"
+        summary_text += f"Chief Complaint: {conversation.chief_complaint or 'Not specified'}\n"
+        summary_text += f"Status: {conversation.status}\n"
+        
+        # Include key messages from conversation
+        messages = conversation.messages
+        if messages:
+            summary_text += "Key Discussion Points:\n"
+            for msg in messages[:6]:  # Limit to first 6 messages per conversation
+                role = "Patient" if msg.role == "user" else "Assistant"
+                content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+                summary_text += f"  {role}: {content}\n"
+        
+        summary_text += "\n"
+    
+    prompt = f"""{summary_text}
+
+Based on this comprehensive medical history spanning {len(conversations)} consultations, please provide:
+
+1. **OVERALL SUMMARY**: A professional medical summary highlighting key patterns and findings
+2. **PRIMARY FINDINGS**: The most significant medical findings across all consultations  
+3. **CARE RECOMMENDATIONS**: Comprehensive recommendations for ongoing care and management
+4. **URGENCY ASSESSMENT**: Overall urgency level considering all interactions and symptoms
+
+Please format your response as valid JSON and focus on providing actionable insights for healthcare providers."""
+    
+    try:
+        result = await llm_service.generate_response(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.3,
+            max_tokens=600
+        )
+        
+        if result.get("success"):
+            import json
+            try:
+                report_data = json.loads(result.get("response", "{}"))
+                report_data["processing_time"] = result.get("processing_time", 0)
+                return report_data
+            except json.JSONDecodeError:
+                return _generate_fallback_summary_report(conversations, user)
+        else:
+            return _generate_fallback_summary_report(conversations, user)
+            
+    except Exception as e:
+        logger.error(f"Error in LLM summary report generation: {e}")
+        return _generate_fallback_summary_report(conversations, user)
+
+
+def _generate_fallback_summary_report(conversations: List[Conversation], user: User) -> Dict[str, Any]:
+    """Generate fallback summary report when LLM is not available."""
+    
+    total_conversations = len(conversations)
+    total_messages = sum(len(conv.messages) for conv in conversations)
+    
+    # Extract unique chief complaints
+    complaints = [conv.chief_complaint for conv in conversations if conv.chief_complaint]
+    unique_complaints = list(set(complaints)) if complaints else ["General health concerns"]
+    
+    # Determine urgency based on conversation frequency and recency
+    recent_conversations = [conv for conv in conversations if 
+                          conv.created_at and (datetime.utcnow() - conv.created_at).days <= 30]
+    
+    urgency = "high" if len(recent_conversations) >= 3 else "medium" if len(recent_conversations) >= 2 else "low"
+    
+    return {
+        "title": f"Medical Summary Report - {datetime.now().strftime('%Y-%m-%d')}",
+        "summary": f"Comprehensive medical summary covering {total_conversations} consultations with {total_messages} total exchanges. Patient has engaged consistently with medical documentation over time, presenting with various health concerns requiring professional evaluation.",
+        "key_findings": [
+            f"Total of {total_conversations} medical consultations documented",
+            f"Primary concerns: {', '.join(unique_complaints[:3])}",
+            f"Consistent engagement with {total_messages} documented exchanges",
+            f"Recent activity: {len(recent_conversations)} consultations in last 30 days"
+        ],
+        "recommendations": [
+            "Schedule comprehensive evaluation with primary healthcare provider",
+            "Bring complete consultation history for review",
+            "Continue documenting symptoms and concerns",
+            "Consider specialist referral based on recurring patterns",
+            "Maintain regular follow-up schedule"
+        ],
+        "urgency_level": urgency,
+        "processing_time": 0
+    } 
