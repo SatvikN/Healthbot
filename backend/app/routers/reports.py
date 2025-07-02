@@ -611,4 +611,37 @@ def _generate_fallback_summary_report(conversations: List[Conversation], user: U
         ],
         "urgency_level": urgency,
         "processing_time": 0
+    }
+
+
+@router.delete("/{report_id}")
+async def delete_medical_report(
+    report_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a medical report."""
+    
+    # Find the report and verify it belongs to the current user
+    report = db.query(MedicalReport).filter(
+        MedicalReport.id == report_id,
+        MedicalReport.user_id == current_user.id
+    ).first()
+    
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or you don't have permission to delete it"
+        )
+    
+    # Store report title for response
+    report_title = report.title
+    
+    # Delete the report
+    db.delete(report)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Report '{report_title}' has been deleted successfully"
     } 

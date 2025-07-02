@@ -188,6 +188,18 @@ export const chatAPI = {
     const response: AxiosResponse<any> = await api.post(`/api/chat/conversation/${conversationId}/medical-report`);
     return response.data;
   },
+
+  deleteConversation: async (conversationId: number): Promise<any> => {
+    const response: AxiosResponse<any> = await api.delete(`/api/chat/conversation/${conversationId}`);
+    return response.data;
+  },
+
+  downloadMedicalReportPDF: async (conversationId: number): Promise<Blob> => {
+    const response: AxiosResponse<Blob> = await api.get(`/api/chat/conversation/${conversationId}/medical-report/download`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
 };
 
 export const symptomsAPI = {
@@ -240,6 +252,11 @@ export const reportsAPI = {
     const response = await api.get(`/api/reports/download/${reportId}`, {
       responseType: 'blob',
     });
+    return response.data;
+  },
+
+  deleteReport: async (reportId: number): Promise<any> => {
+    const response: AxiosResponse<any> = await api.delete(`/api/reports/${reportId}`);
     return response.data;
   },
 

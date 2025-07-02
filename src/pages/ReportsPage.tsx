@@ -42,6 +42,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
   Summarize as SummarizeIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useSnackbar } from '../contexts/SnackbarContext';
 import { reportsAPI } from '../services/api';
@@ -74,6 +75,11 @@ const ReportsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [reportToDelete, setReportToDelete] = useState<MedicalReport | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Load reports from backend
   const loadReports = React.useCallback(async () => {
@@ -184,7 +190,36 @@ const ReportsPage: React.FC = () => {
     showMessage(`Opening conversation #${conversationId} in Chat section`, 'info');
   };
 
+  const handleDeleteReport = (report: MedicalReport) => {
+    setReportToDelete(report);
+    setDeleteDialogOpen(true);
+  };
 
+  const confirmDeleteReport = async () => {
+    if (!reportToDelete) return;
+
+    try {
+      setDeleting(true);
+      await reportsAPI.deleteReport(reportToDelete.id);
+      showMessage(`Report "${reportToDelete.title}" has been deleted successfully`, 'success');
+      
+      // Remove the deleted report from the local state
+      setReports(prevReports => prevReports.filter(report => report.id !== reportToDelete.id));
+      
+      setDeleteDialogOpen(false);
+      setReportToDelete(null);
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      showMessage('Failed to delete report. Please try again.', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const cancelDeleteReport = () => {
+    setDeleteDialogOpen(false);
+    setReportToDelete(null);
+  };
 
   const handleGenerateSummaryReport = async () => {
     try {
@@ -435,13 +470,24 @@ const ReportsPage: React.FC = () => {
                   >
                     View Details
                   </Button>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleDownloadReport(report)}
-                    color="primary"
-                  >
-                    <DownloadIcon />
-                  </IconButton>
+                  <Box display="flex" gap={1}>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDownloadReport(report)}
+                      color="primary"
+                      title="Download Report"
+                    >
+                      <DownloadIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDeleteReport(report)}
+                      color="error"
+                      title="Delete Report"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Box>
                 </CardActions>
               </Card>
             </Grid>
@@ -555,6 +601,67 @@ const ReportsPage: React.FC = () => {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={cancelDeleteReport}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={2}>
+            <DeleteIcon color="error" />
+            <Typography variant="h6">Delete Report</Typography>
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent>
+          {reportToDelete && (
+            <Box>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to delete this report? This action cannot be undone.
+              </Typography>
+              
+              <Paper sx={{ p: 2, mt: 2, bgcolor: 'grey.50' }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Report to be deleted:
+                </Typography>
+                <Typography variant="body2" fontWeight="bold">
+                  {reportToDelete.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {getTypeLabel(reportToDelete.type)} • Created on {new Date(reportToDelete.createdAt).toLocaleDateString()}
+                </Typography>
+              </Paper>
+              
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'error.light', borderRadius: 1 }}>
+                <Typography variant="body2" color="error.dark">
+                  ⚠️ <strong>Warning:</strong> This will permanently delete the report and all its associated data. You will not be able to recover it.
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 3 }}>
+          <Button 
+            onClick={cancelDeleteReport}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="contained"
+            color="error"
+            onClick={confirmDeleteReport}
+            disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={20} /> : <DeleteIcon />}
+          >
+            {deleting ? 'Deleting...' : 'Delete Report'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Container>
   );

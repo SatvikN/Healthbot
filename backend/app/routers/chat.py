@@ -5,6 +5,12 @@ from datetime import datetime
 from pydantic import BaseModel
 import json
 import logging
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +207,20 @@ async def send_message(
         db.commit()
         db.refresh(ai_message)
         
-        return {
+        # Generate automatic diagnosis prediction if conversation has enough context
+        diagnosis_prediction = None
+        if len(conversation_history) >= 2:  # At least 2 exchanges for context
+            try:
+                # Get updated conversation history including the new messages
+                updated_history = _get_conversation_history(db, conversation.id)
+                diagnosis_prediction = await _generate_diagnosis_llm(
+                    llm_service, updated_history, current_user
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate automatic diagnosis: {e}")
+                diagnosis_prediction = "Unable to generate diagnosis prediction at this time."
+        
+        response_data = {
             "status": "success",
             "user_message": {
                 "id": user_message.id,
@@ -215,6 +234,16 @@ async def send_message(
                 "requires_followup": requires_followup
             }
         }
+        
+        # Include diagnosis prediction if generated
+        if diagnosis_prediction:
+            response_data["automatic_diagnosis"] = {
+                "content": diagnosis_prediction,
+                "generated_at": datetime.utcnow().isoformat(),
+                "confidence_note": "This is an AI-generated prediction for informational purposes only. Please consult a healthcare professional for proper diagnosis."
+            }
+        
+        return response_data
             
     except Exception as e:
         db.rollback()
@@ -285,7 +314,7 @@ async def get_conversation_details(
     for msg in messages:
         message_list.append({
             "id": msg.id,
-            "message_type": msg.role,  # Use role field which contains user/assistant/system
+            "message_type": msg.role,  # Use role field which contains user/assistant
             "content": msg.content,
             "created_at": msg.created_at,
             "processing_time": msg.processing_time,
@@ -518,7 +547,6 @@ async def generate_medical_report(
         )
         
         # Create a medical report record
-        
         report = MedicalReport(
             user_id=current_user.id,
             conversation_id=conversation_id,
@@ -535,12 +563,29 @@ async def generate_medical_report(
         db.commit()
         db.refresh(report)
         
+        # Add notification message to chat
+        notification_message = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=f"📄 **Medical Report Generated Successfully!**\n\nYour medical report '{report.title}' has been created and saved to your Reports section. You can access it from the main dashboard or download it as a PDF from the chat interface.\n\n*Report ID: {report.id}*",
+            contains_medical_info=True
+        )
+        
+        db.add(notification_message)
+        db.commit()
+        db.refresh(notification_message)
+        
         return {
             "report_id": report.id,
             "title": report.title,
             "content": report_content,
             "status": "completed",
-            "message": "Medical report generated successfully"
+            "message": "Medical report generated successfully",
+            "notification_message": {
+                "id": notification_message.id,
+                "content": notification_message.content,
+                "created_at": notification_message.created_at
+            }
         }
         
     except Exception as e:
@@ -564,12 +609,29 @@ async def generate_medical_report(
         db.commit()
         db.refresh(report)
         
+        # Add notification message to chat
+        notification_message = Message(
+            conversation_id=conversation_id,
+            role="assistant", 
+            content=f"📄 **Medical Report Generated Successfully!**\n\nYour medical report '{report.title}' has been created and saved to your Reports section. You can access it from the main dashboard or download it as a PDF from the chat interface.\n\n*Report ID: {report.id}*",
+            contains_medical_info=True
+        )
+        
+        db.add(notification_message)
+        db.commit()
+        db.refresh(notification_message)
+        
         return {
             "report_id": report.id,
             "title": report.title,
             "content": fallback_content,
             "status": "completed",
-            "message": "Medical report generated successfully (fallback mode)"
+            "message": "Medical report generated successfully (fallback mode)",
+            "notification_message": {
+                "id": notification_message.id,
+                "content": notification_message.content,
+                "created_at": notification_message.created_at
+            }
         }
 
 
@@ -582,10 +644,15 @@ def _get_conversation_history(db: Session, conversation_id: int) -> List[Dict]:
     
     history = []
     for msg in messages:
+        # Use the role field from the database which stores user/assistant/system
+        # Add defensive handling for None or empty role values
+        role = msg.role if msg.role else "user"  # Default to user if role is None/empty
+        content = msg.content if msg.content else ""  # Default to empty string if content is None
+        
         history.append({
-            "message_type": msg.role,  # Use role field which contains user/assistant/system
-            "content": msg.content,
-            "created_at": msg.created_at.isoformat()
+            "role": role,  # This field contains user/assistant/system
+            "content": content,
+            "created_at": msg.created_at.isoformat() if msg.created_at else ""
         })
     
     return history
@@ -748,7 +815,7 @@ Based on the conversation history and the latest user message, provide a helpful
     # Format conversation history for context
     history_text = ""
     for msg in conversation_history[-5:]:  # Last 5 messages for context
-        role = "Patient" if msg.get("message_type") == "user" else "Assistant"
+        role = "Patient" if msg.get("role") == "user" else "Assistant"
         history_text += f"{role}: {msg.get('content', '')}\n"
     
     context = f"Conversation history:\n{history_text}\nLatest patient message: {user_message}"
@@ -797,7 +864,7 @@ Be thorough but appropriately cautious, and always prioritize patient safety. If
     # Format conversation history
     history_text = "CONSULTATION SUMMARY:\n\n"
     for msg in conversation_history:
-        role = "Patient" if msg.get("message_type") == "user" else "Assistant"
+        role = "Patient" if msg.get("role") == "user" else "Assistant"
         history_text += f"{role}: {msg.get('content', '')}\n"
     
     # Add user context if available
@@ -913,11 +980,25 @@ async def _generate_medical_report_llm(
 ) -> Dict[str, Any]:
     """Generate medical report using LLM based on conversation history."""
     
+    # Validate input
+    if not conversation_history:
+        raise ValueError("No conversation history provided for report generation")
+    
     # Format conversation for medical report
     conversation_text = ""
     for msg in conversation_history:
-        role = "Patient" if msg["role"] == "user" else "AI Assistant"
-        conversation_text += f"{role}: {msg['content']}\n\n"
+        # Extra defensive handling for message data
+        if not isinstance(msg, dict):
+            continue  # Skip invalid messages
+            
+        # Safely get role with fallback
+        msg_role = msg.get("role", "user")  # Default to user if missing
+        role = "Patient" if msg_role == "user" else "AI Assistant"
+        content = msg.get("content", "")
+        
+        # Only add non-empty content
+        if content.strip():
+            conversation_text += f"{role}: {content}\n\n"
     
     system_prompt = f"""You are a medical documentation specialist. Generate a formal medical report based on the patient conversation below.
 
@@ -944,7 +1025,12 @@ Conversation:
 Provide a comprehensive medical report based on this conversation."""
 
     try:
-        report_text = await llm_service.generate_response(conversation_text, system_prompt)
+        result = await llm_service.generate_response(conversation_text, system_prompt)
+        
+        if not result.get("success"):
+            raise Exception(f"LLM generation failed: {result.get('error', 'Unknown error')}")
+            
+        report_text = result.get("response", "")
         
         # Extract key information for structured data
         key_findings = []
@@ -959,10 +1045,12 @@ Provide a comprehensive medical report based on this conversation."""
             
         # Extract symptoms mentioned
         for msg in conversation_history:
-            if msg["role"] == "user":
-                content_lower = msg["content"].lower()
+            msg_role = msg.get("role", "unknown")
+            if msg_role == "user":
+                content = msg.get("content", "")
+                content_lower = content.lower()
                 if any(symptom in content_lower for symptom in ["pain", "headache", "fever", "nausea", "fatigue", "dizziness"]):
-                    key_findings.append(f"Patient reported: {msg['content'][:100]}...")
+                    key_findings.append(f"Patient reported: {content[:100]}...")
         
         # Generate basic recommendations
         recommendations = [
@@ -987,16 +1075,31 @@ Provide a comprehensive medical report based on this conversation."""
 def _generate_fallback_medical_report(conversation_history: List[Dict], user: User) -> Dict[str, Any]:
     """Generate fallback medical report when LLM is not available."""
     
-    # Count messages and extract basic info
-    user_messages = [msg for msg in conversation_history if msg["role"] == "user"]
-    ai_messages = [msg for msg in conversation_history if msg["role"] == "assistant"]
+    # Validate input
+    if not conversation_history:
+        conversation_history = []
+    
+    # Count messages and extract basic info with extra defensive handling
+    user_messages = []
+    ai_messages = []
+    
+    for msg in conversation_history:
+        if not isinstance(msg, dict):
+            continue  # Skip invalid messages
+            
+        msg_role = msg.get("role", "user")  # Default to user if missing
+        if msg_role == "user":
+            user_messages.append(msg)
+        elif msg_role == "assistant":
+            ai_messages.append(msg)
     
     # Extract potential symptoms from user messages
     symptoms_mentioned = []
     concerns_mentioned = []
     
     for msg in user_messages:
-        content_lower = msg["content"].lower()
+        content = msg.get("content", "")
+        content_lower = content.lower()
         # Simple keyword detection
         if any(word in content_lower for word in ["pain", "hurt", "ache"]):
             symptoms_mentioned.append("Pain symptoms reported")
@@ -1022,7 +1125,7 @@ CONSULTATION SUMMARY:
 This report is based on a digital health consultation with {len(user_messages)} patient messages and {len(ai_messages)} AI assistant responses.
 
 CHIEF COMPLAINT:
-{user_messages[0]["content"] if user_messages else "Patient initiated health consultation"}
+{user_messages[0].get("content", "Patient initiated health consultation") if user_messages else "Patient initiated health consultation"}
 
 SYMPTOMS DOCUMENTED:
 {chr(10).join([f"- {symptom}" for symptom in symptoms_mentioned]) if symptoms_mentioned else "- General health inquiry"}
@@ -1060,3 +1163,187 @@ Note: This report is generated from an AI-assisted health consultation and shoul
         "recommendations": recommendations,
         "urgency_level": "medium"
     } 
+
+@router.delete("/conversation/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a conversation and all its messages."""
+    
+    # Verify conversation exists and belongs to user
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    try:
+        # Delete all messages first (due to foreign key constraints)
+        db.query(Message).filter(Message.conversation_id == conversation_id).delete()
+        
+        # Delete any medical reports for this conversation
+        db.query(MedicalReport).filter(MedicalReport.conversation_id == conversation_id).delete()
+        
+        # Delete the conversation
+        db.delete(conversation)
+        db.commit()
+        
+        return {
+            "message": "Conversation deleted successfully",
+            "deleted_conversation_id": conversation_id
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting conversation {conversation_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete conversation"
+        )
+
+@router.get("/conversation/{conversation_id}/medical-report/download")
+async def download_medical_report(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate and download a medical report as PDF."""
+    
+    # Verify conversation exists and belongs to user
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    # Get conversation history
+    conversation_history = _get_conversation_history(db, conversation_id)
+    
+    if not conversation_history:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No conversation history available for report generation"
+        )
+    
+    try:
+        # Generate report content
+        llm_service = LLMService()
+        report_content = await _generate_medical_report_llm(
+            llm_service, conversation_history, current_user
+        )
+        
+        # Generate PDF
+        pdf_buffer = _generate_pdf_report(report_content, current_user, conversation)
+        
+        # Return as downloadable file
+        return StreamingResponse(
+            BytesIO(pdf_buffer),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=medical_report_{conversation_id}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF report: {str(e)}")
+        # Generate fallback PDF if LLM fails
+        fallback_content = _generate_fallback_medical_report(conversation_history, current_user)
+        pdf_buffer = _generate_pdf_report(fallback_content, current_user, conversation)
+        
+        return StreamingResponse(
+            BytesIO(pdf_buffer),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=medical_report_{conversation_id}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            }
+        )
+
+def _generate_pdf_report(report_content: Dict[str, Any], user: User, conversation: Conversation) -> bytes:
+    """Generate PDF from report content."""
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=1*inch)
+    
+    # Get styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], spaceAfter=30)
+    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], spaceAfter=12)
+    normal_style = styles['Normal']
+    
+    # Build story
+    story = []
+    
+    # Title
+    story.append(Paragraph("Medical Consultation Report", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Patient Information
+    story.append(Paragraph("Patient Information", heading_style))
+    story.append(Paragraph(f"<b>Name:</b> {user.full_name or 'Patient'}", normal_style))
+    story.append(Paragraph(f"<b>Email:</b> {user.email}", normal_style))
+    story.append(Paragraph(f"<b>Age:</b> {user.age or 'Not specified'}", normal_style))
+    story.append(Paragraph(f"<b>Gender:</b> {user.gender or 'Not specified'}", normal_style))
+    story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%B %d, %Y')}", normal_style))
+    story.append(Spacer(1, 20))
+    
+    # Report Content
+    story.append(Paragraph("Report Summary", heading_style))
+    story.append(Paragraph(report_content.get("summary", ""), normal_style))
+    story.append(Spacer(1, 15))
+    
+    # Key Findings
+    if report_content.get("key_findings"):
+        story.append(Paragraph("Key Findings", heading_style))
+        for finding in report_content["key_findings"]:
+            story.append(Paragraph(f"• {finding}", normal_style))
+        story.append(Spacer(1, 15))
+    
+    # Recommendations
+    if report_content.get("recommendations"):
+        story.append(Paragraph("Recommendations", heading_style))
+        for rec in report_content["recommendations"]:
+            story.append(Paragraph(f"• {rec}", normal_style))
+        story.append(Spacer(1, 15))
+    
+    # Full Report Content
+    if report_content.get("content"):
+        story.append(Paragraph("Detailed Report", heading_style))
+        # Split content into paragraphs
+        content_paragraphs = report_content["content"].split('\n\n')
+        for para in content_paragraphs:
+            if para.strip():
+                story.append(Paragraph(para.strip(), normal_style))
+                story.append(Spacer(1, 10))
+    
+    # Urgency Level
+    urgency = report_content.get("urgency_level", "medium")
+    story.append(Paragraph(f"<b>Urgency Level:</b> {urgency.title()}", normal_style))
+    
+    # Disclaimer
+    story.append(Spacer(1, 30))
+    disclaimer = """
+    <b>IMPORTANT MEDICAL DISCLAIMER:</b><br/>
+    This report is generated from an AI-assisted health consultation and is for informational purposes only. 
+    It should not be used as a substitute for professional medical advice, diagnosis, or treatment. 
+    Always seek the advice of qualified healthcare providers with any questions regarding medical conditions.
+    """
+    story.append(Paragraph(disclaimer, normal_style))
+    
+    # Build PDF
+    doc.build(story)
+    pdf_buffer = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_buffer 

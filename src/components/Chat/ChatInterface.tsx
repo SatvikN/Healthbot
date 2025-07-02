@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -8,12 +8,15 @@ import {
   Chip,
   Button,
   Fade,
+  TextField,
+  IconButton,
 } from '@mui/material';
 import {
   Person as PersonIcon,
   SmartToy as BotIcon,
   MedicalServices as MedicalIcon,
   Description as ReportIcon,
+  Send as SendIcon,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import { format } from 'date-fns';
@@ -23,6 +26,7 @@ import { Conversation, Message } from '../../services/api';
 interface ChatInterfaceProps {
   conversation: Conversation;
   isLoading?: boolean;
+  onSendMessage?: (message: string) => void;
   onQuickReply?: (message: string) => void;
   onRequestDiagnosis?: () => void;
   isDiagnosisLoading?: boolean;
@@ -30,8 +34,18 @@ interface ChatInterfaceProps {
   isReportLoading?: boolean;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, onQuickReply, onRequestDiagnosis, isDiagnosisLoading, onGenerateReport, isReportLoading }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
+  conversation, 
+  isLoading, 
+  onSendMessage,
+  onQuickReply, 
+  onRequestDiagnosis, 
+  isDiagnosisLoading, 
+  onGenerateReport, 
+  isReportLoading 
+}) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [newMessage, setNewMessage] = useState('');
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -333,8 +347,68 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, 
         {/* Scroll anchor */}
         <div ref={messagesEndRef} />
       </Box>
+
+      {/* Message Input */}
+      <Box
+        sx={{
+          p: 2,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Box display="flex" gap={1} alignItems="flex-end">
+          <TextField
+            fullWidth
+            multiline
+            maxRows={4}
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type your message here..."
+            variant="outlined"
+            size="small"
+            disabled={isLoading || isDiagnosisLoading || isReportLoading}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 3,
+              },
+            }}
+          />
+          <IconButton
+            onClick={handleSendMessage}
+            disabled={!newMessage.trim() || isLoading || isDiagnosisLoading || isReportLoading}
+            color="primary"
+            sx={{
+              bgcolor: 'primary.main',
+              color: 'white',
+              '&:hover': {
+                bgcolor: 'primary.dark',
+              },
+              '&:disabled': {
+                bgcolor: 'grey.300',
+                color: 'grey.500',
+              },
+            }}
+          >
+            <SendIcon />
+          </IconButton>
+        </Box>
+      </Box>
     </Paper>
   );
+
+  function handleSendMessage() {
+    if (newMessage.trim() && onSendMessage) {
+      onSendMessage(newMessage.trim());
+      setNewMessage('');
+    }
+  }
 };
 
 export default ChatInterface; 

@@ -12,10 +12,17 @@ import {
   Drawer,
   IconButton,
   Divider,
+  Menu,
+  MenuItem,
+  Alert,
+  AlertTitle,
 } from '@mui/material';
 import { 
   History as HistoryIcon,
   Add as AddIcon,
+  Delete as DeleteIcon,
+  Download as DownloadIcon,
+  MoreVert as MoreVertIcon,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from 'react-query';
 
@@ -36,13 +43,21 @@ interface ActiveConversation {
   messages: Message[];
 }
 
+interface AutoDiagnosis {
+  content: string;
+  generated_at: string;
+  confidence_note: string;
+}
+
 
 
 const ChatPage: React.FC = () => {
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(null);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [conversationsDrawerOpen, setConversationsDrawerOpen] = useState(false);
-  const [message, setMessage] = useState('');
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
+  const [autoDiagnosis, setAutoDiagnosis] = useState<AutoDiagnosis | null>(null);
   const { showMessage } = useSnackbar();
 
   // Load conversations list
@@ -111,6 +126,15 @@ const ChatPage: React.FC = () => {
             ...prev,
             messages: [...prev.messages, ...newMessages],
           } : null);
+
+          // Handle automatic diagnosis prediction
+          if (response.automatic_diagnosis) {
+            setAutoDiagnosis({
+              content: response.automatic_diagnosis.content,
+              generated_at: response.automatic_diagnosis.generated_at,
+              confidence_note: response.automatic_diagnosis.confidence_note,
+            });
+          }
         }
         // Refresh conversations list to update message count
         refetchConversations();
@@ -261,6 +285,21 @@ const ChatPage: React.FC = () => {
     {
       onSuccess: (response: any) => {
         showMessage('✅ Medical report generated successfully and saved to your Reports section!', 'success');
+        
+        // Add the notification message to the conversation
+        if (response && response.notification_message && activeConversation) {
+          const notificationMessage = {
+            id: response.notification_message.id,
+            content: response.notification_message.content,
+            message_type: 'assistant' as const,
+            created_at: response.notification_message.created_at,
+          };
+          
+          setActiveConversation(prev => prev ? {
+            ...prev,
+            messages: [...prev.messages, notificationMessage],
+          } : null);
+        }
       },
       onError: (error: any) => {
         console.error('Error generating medical report:', error);
@@ -286,6 +325,100 @@ const ChatPage: React.FC = () => {
     }
   );
 
+  // Delete conversation mutation
+  const deleteConversationMutation = useMutation(
+    async (conversationId: number) => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.deleteConversation(conversationId);
+    },
+    {
+      onSuccess: (response: any, conversationId: number) => {
+        showMessage('Conversation deleted successfully', 'success');
+        
+        // If the deleted conversation was active, clear it
+        if (activeConversation?.id === conversationId) {
+          setActiveConversation(null);
+        }
+        
+        // Refresh conversations list
+        refetchConversations();
+        setMenuAnchorEl(null);
+      },
+      onError: (error: any) => {
+        console.error('Error deleting conversation:', error);
+        let errorMessage = 'Failed to delete conversation. Please try again.';
+        
+        if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || error.response.data?.message;
+          
+          if (status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (status === 404) {
+            errorMessage = 'Conversation not found.';
+          } else if (status === 500) {
+            errorMessage = `Server error: ${detail || 'Internal server error occurred.'}`;
+          } else if (detail) {
+            errorMessage = `Error (${status}): ${detail}`;
+          }
+        } else if (error.request) {
+          errorMessage = 'Network error. Please check your connection.';
+        }
+        
+        showMessage(errorMessage, 'error');
+        setMenuAnchorEl(null);
+      },
+    }
+  );
+
+  // Download PDF report mutation
+  const downloadPDFMutation = useMutation(
+    async (conversationId: number) => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.downloadMedicalReportPDF(conversationId);
+    },
+    {
+      onSuccess: (blob: Blob, conversationId: number) => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `medical_report_${conversationId}_${new Date().toISOString().split('T')[0]}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        
+        showMessage('PDF report downloaded successfully!', 'success');
+        setMenuAnchorEl(null);
+      },
+      onError: (error: any) => {
+        console.error('Error downloading PDF:', error);
+        let errorMessage = 'Failed to download PDF report. Please try again.';
+        
+        if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || error.response.data?.message;
+          
+          if (status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (status === 404) {
+            errorMessage = 'Report not found. Please generate a medical report first.';
+          } else if (status === 500) {
+            errorMessage = `Server error: ${detail || 'Internal server error occurred.'}`;
+          } else if (detail) {
+            errorMessage = `Error (${status}): ${detail}`;
+          }
+        } else if (error.request) {
+          errorMessage = 'Network error. Please check your connection.';
+        }
+        
+        showMessage(errorMessage, 'error');
+        setMenuAnchorEl(null);
+      },
+    }
+  );
+
   const sendMessage = (messageText: string) => {
     if (activeConversation) {
       sendMessageMutation.mutate({
@@ -295,12 +428,7 @@ const ChatPage: React.FC = () => {
     }
   };
 
-  const handleSendMessage = () => {
-    if (message.trim() && activeConversation) {
-      sendMessage(message.trim());
-      setMessage('');
-    }
-  };
+
 
   const handleQuickReply = (replyMessage: string) => {
     sendMessage(replyMessage);
@@ -330,6 +458,29 @@ const ChatPage: React.FC = () => {
 
   const handleSelectConversation = (conversationId: number) => {
     loadConversation(conversationId);
+  };
+
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, conversationId: number) => {
+    event.stopPropagation();
+    setMenuAnchorEl(event.currentTarget);
+    setSelectedConversationId(conversationId);
+  };
+
+  const handleMenuClose = () => {
+    setMenuAnchorEl(null);
+    setSelectedConversationId(null);
+  };
+
+  const handleDeleteConversation = () => {
+    if (selectedConversationId) {
+      deleteConversationMutation.mutate(selectedConversationId);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (selectedConversationId) {
+      downloadPDFMutation.mutate(selectedConversationId);
+    }
   };
 
   return (
@@ -369,6 +520,21 @@ const ChatPage: React.FC = () => {
                 </Typography>
               </Box>
 
+              {/* Automatic Diagnosis Alert */}
+              {autoDiagnosis && (
+                <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Alert severity="info" onClose={() => setAutoDiagnosis(null)}>
+                    <AlertTitle>Automatic AI Diagnosis Prediction</AlertTitle>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      {autoDiagnosis.content}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {autoDiagnosis.confidence_note}
+                    </Typography>
+                  </Alert>
+                </Box>
+              )}
+
               {/* Chat interface */}
               <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
                 <ChatInterface
@@ -381,6 +547,7 @@ const ChatPage: React.FC = () => {
                     messages: activeConversation.messages,
                   }}
                   isLoading={sendMessageMutation.isLoading}
+                  onSendMessage={sendMessage}
                   onQuickReply={handleQuickReply}
                   onRequestDiagnosis={handleRequestDiagnosis}
                   isDiagnosisLoading={generateDiagnosisMutation.isLoading}
@@ -468,12 +635,19 @@ const ChatPage: React.FC = () => {
                             {new Date(conversation.started_at).toLocaleDateString()} at{' '}
                             {new Date(conversation.started_at).toLocaleTimeString()}
                           </Typography>
-                                                     <Typography variant="caption" color="text.secondary">
-                             {conversation.messages?.length || 0} messages
-                           </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {(conversation as any).message_count || conversation.messages?.length || 0} messages
+                          </Typography>
                         </Box>
                       }
                     />
+                    <IconButton
+                      edge="end"
+                      onClick={(e) => handleMenuOpen(e, conversation.id)}
+                      size="small"
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
                   </ListItemButton>
                 </ListItem>
               ))}
@@ -496,6 +670,26 @@ const ChatPage: React.FC = () => {
             </Box>
           )}
         </Drawer>
+
+        {/* Conversation Actions Menu */}
+        <Menu
+          anchorEl={menuAnchorEl}
+          open={Boolean(menuAnchorEl)}
+          onClose={handleMenuClose}
+        >
+          <MenuItem onClick={handleDownloadPDF} disabled={downloadPDFMutation.isLoading}>
+            <DownloadIcon sx={{ mr: 1 }} />
+            Download PDF Report
+          </MenuItem>
+          <MenuItem 
+            onClick={handleDeleteConversation} 
+            disabled={deleteConversationMutation.isLoading}
+            sx={{ color: 'error.main' }}
+          >
+            <DeleteIcon sx={{ mr: 1 }} />
+            Delete Conversation
+          </MenuItem>
+        </Menu>
 
         {/* Start Conversation Dialog */}
         <StartConversationDialog

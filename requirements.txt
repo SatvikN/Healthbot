@@ -44,6 +44,9 @@ structlog==23.2.0
 pandas==2.1.4
 numpy==1.25.2
 
+# PDF generation
+reportlab==4.0.7
+
 # Date/time handling
 python-dateutil==2.8.2
 
