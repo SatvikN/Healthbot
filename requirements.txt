@@ -11,11 +11,7 @@ alembic==1.12.1
 redis==5.0.1
 
 # LLM and AI
-ollama==0.1.7
-langchain==0.0.352
-langchain-community==0.0.5
-transformers==4.36.2
-torch==2.1.1
+ollama==0.1.8
 
 # Authentication
 python-jose[cryptography]==3.3.0
@@ -23,13 +19,11 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
 # Environment and configuration
-python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
 # HTTP client for external APIs
 httpx==0.25.2
-aiohttp==3.9.1
 
 # Data validation and serialization
 marshmallow==3.20.1
@@ -51,4 +45,7 @@ pandas==2.1.4
 numpy==1.25.2
 
 # Date/time handling
-python-dateutil==2.8.2 
+python-dateutil==2.8.2
+
+# Email validation
+email-validator==2.1.0 

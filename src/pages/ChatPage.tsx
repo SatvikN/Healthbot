@@ -1,21 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
   Container,
   Typography,
   Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
   CircularProgress,
 } from '@mui/material';
 import { Add as AddIcon, Send as SendIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 
-import { chatAPI, Conversation, Message } from '../services/api';
+import { chatAPI, Conversation } from '../services/api';
 import { useSnackbar } from '../contexts/SnackbarContext';
 import ChatInterface from '../components/Chat/ChatInterface';
 import StartConversationDialog from '../components/Chat/StartConversationDialog';

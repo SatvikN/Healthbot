@@ -4,83 +4,96 @@ from sqlalchemy.sql import func
 from ..database import Base
 
 
-class Diagnosis(Base):
-    """Model for medical conditions/diagnoses that the AI can suggest."""
-    
-    __tablename__ = "diagnoses"
+class MedicalCondition(Base):
+    __tablename__ = "medical_conditions"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
+    
+    # Condition identification
+    name = Column(String, nullable=False, index=True)
+    icd10_code = Column(String, nullable=True, index=True)  # ICD-10 diagnostic code
+    category = Column(String, nullable=True)  # cardiovascular, respiratory, etc.
+    
+    # Condition details
     description = Column(Text, nullable=True)
-    category = Column(String(100), nullable=True)  # e.g., "infectious", "chronic", "acute"
+    common_symptoms = Column(JSON, default=list)
+    typical_age_range = Column(String, nullable=True)
+    prevalence = Column(String, nullable=True)  # common, rare, very rare
     
-    # Medical coding
-    icd10_code = Column(String(10), nullable=True, index=True)
-    snomed_code = Column(String(20), nullable=True)
+    # Severity and urgency
+    severity_level = Column(String, nullable=True)  # mild, moderate, severe, critical
+    requires_emergency_care = Column(Boolean, default=False)
     
-    # Condition characteristics
-    common_symptoms = Column(JSON, nullable=True)  # List of typical symptoms
-    severity_range = Column(String(50), nullable=True)  # "mild to moderate", "severe"
-    urgency_indicators = Column(JSON, nullable=True)  # Red flag symptoms
-    
-    # Demographics and risk factors
-    common_age_groups = Column(JSON, nullable=True)  # Age groups most affected
-    gender_prevalence = Column(String(20), nullable=True)  # "equal", "male", "female"
-    risk_factors = Column(JSON, nullable=True)
-    
-    # Treatment and management
-    typical_treatment = Column(Text, nullable=True)
-    home_care_suggestions = Column(JSON, nullable=True)
-    when_to_seek_care = Column(Text, nullable=True)
-    
-    # System metadata
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Reference information
+    reference_sources = Column(JSON, default=list)
+    last_updated = Column(DateTime(timezone=True), onupdate=func.now())
     
     def __repr__(self):
-        return f"<Diagnosis(id={self.id}, name='{self.name}', icd10='{self.icd10_code}')>"
+        return f"<MedicalCondition(id={self.id}, name='{self.name}', icd10='{self.icd10_code}')>"
 
 
 class DiagnosisResult(Base):
-    """Model for AI-generated diagnosis results for specific symptom reports."""
-    
     __tablename__ = "diagnosis_results"
     
     id = Column(Integer, primary_key=True, index=True)
     symptom_report_id = Column(Integer, ForeignKey("symptom_reports.id"), nullable=False)
-    diagnosis_id = Column(Integer, ForeignKey("diagnoses.id"), nullable=False)
     
-    # AI confidence and scoring
-    confidence_score = Column(Float, nullable=False)  # 0.0 to 1.0
-    match_percentage = Column(Float, nullable=True)  # Symptom match percentage
+    # AI diagnosis information
+    ai_model_used = Column(String, nullable=False)
+    model_version = Column(String, nullable=True)
+    analysis_timestamp = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Reasoning and explanation
-    ai_reasoning = Column(Text, nullable=True)  # Why this diagnosis was suggested
-    matching_symptoms = Column(JSON, nullable=True)  # Which symptoms matched
-    missing_symptoms = Column(JSON, nullable=True)  # Expected symptoms not present
+    # Diagnosis results
+    primary_diagnosis = Column(String, nullable=True)
+    differential_diagnoses = Column(JSON, default=list)  # List of possible conditions
+    confidence_scores = Column(JSON, default=dict)  # Confidence for each diagnosis
     
     # Risk assessment
-    likelihood = Column(String(20), nullable=True)  # "very low", "low", "moderate", "high", "very high"
-    urgency = Column(String(20), nullable=True)  # "routine", "soon", "urgent", "emergency"
+    urgency_level = Column(String, default="routine")  # emergency, urgent, routine
+    risk_factors = Column(JSON, default=list)
+    red_flags = Column(JSON, default=list)  # Warning signs
     
-    # Recommendations specific to this diagnosis
-    recommended_actions = Column(JSON, nullable=True)
-    home_care_advice = Column(Text, nullable=True)
-    warning_signs = Column(JSON, nullable=True)  # When to seek immediate care
+    # Recommendations
+    recommended_actions = Column(JSON, default=list)
+    follow_up_timeframe = Column(String, nullable=True)
+    specialist_referral = Column(String, nullable=True)
     
-    # Follow-up suggestions
-    followup_timeframe = Column(String(50), nullable=True)  # "24 hours", "1 week"
-    specialist_referral = Column(String(100), nullable=True)  # Type of specialist
+    # Additional analysis
+    symptom_pattern_analysis = Column(Text, nullable=True)
+    medical_reasoning = Column(Text, nullable=True)
+    limitations_disclaimer = Column(Text, nullable=True)
     
-    # Model metadata
-    model_version = Column(String(50), nullable=True)
-    processing_time = Column(Integer, nullable=True)  # milliseconds
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Quality metrics
+    analysis_completeness = Column(Integer, nullable=True)  # 0-100
+    data_quality_score = Column(Integer, nullable=True)  # 0-100
+    
+    # Review and validation
+    reviewed_by_human = Column(Boolean, default=False)
+    human_reviewer_notes = Column(Text, nullable=True)
+    review_timestamp = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     symptom_report = relationship("SymptomReport")
-    diagnosis = relationship("Diagnosis")
     
     def __repr__(self):
-        return f"<DiagnosisResult(id={self.id}, confidence={self.confidence_score}, likelihood='{self.likelihood}')>" 
+        return f"<DiagnosisResult(id={self.id}, primary_diagnosis='{self.primary_diagnosis}', urgency='{self.urgency_level}')>"
+
+
+class DiagnosisConditionLink(Base):
+    __tablename__ = "diagnosis_condition_links"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    diagnosis_result_id = Column(Integer, ForeignKey("diagnosis_results.id"), nullable=False)
+    medical_condition_id = Column(Integer, ForeignKey("medical_conditions.id"), nullable=False)
+    
+    # Link metadata
+    confidence_score = Column(Float, nullable=True)  # 0.0-1.0
+    is_primary_diagnosis = Column(Boolean, default=False)
+    reasoning = Column(Text, nullable=True)
+    
+    # Relationships
+    diagnosis_result = relationship("DiagnosisResult")
+    medical_condition = relationship("MedicalCondition")
+    
+    def __repr__(self):
+        return f"<DiagnosisConditionLink(diagnosis_id={self.diagnosis_result_id}, condition_id={self.medical_condition_id})>" 

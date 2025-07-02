@@ -33,53 +33,78 @@ class SymptomReport(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
     
-    # Report identification
-    report_code = Column(String(20), unique=True, index=True)  # Unique code for sharing
-    title = Column(String(255), nullable=False)
+    # Report metadata
+    title = Column(String, nullable=False)
+    status = Column(String, default="draft")  # draft, completed, reviewed, archived
     
-    # Chief complaint
-    chief_complaint = Column(Text, nullable=False)
-    symptom_onset = Column(String(100), nullable=True)  # "2 days ago", "1 week ago"
-    symptom_duration = Column(String(100), nullable=True)
+    # Patient information (anonymized)
+    patient_age_range = Column(String, nullable=True)  # "20-30", "40-50", etc.
+    patient_gender = Column(String, nullable=True)
+    patient_id_hash = Column(String, nullable=True)  # Hashed identifier for privacy
     
-    # Detailed symptoms (JSON structure)
-    symptoms_detailed = Column(JSON, nullable=True)  # Structured symptom data
-    severity_assessment = Column(JSON, nullable=True)  # Severity ratings
+    # Symptom summary
+    primary_symptoms = Column(JSON, default=list)  # List of main symptoms
+    secondary_symptoms = Column(JSON, default=list)  # Additional symptoms
+    symptom_timeline = Column(JSON, default=dict)  # When symptoms started/progressed
+    symptom_severity = Column(JSON, default=dict)  # Severity ratings 1-10
     
-    # Patient responses to follow-up questions
-    followup_responses = Column(JSON, nullable=True)
+    # Context information
+    medical_history = Column(Text, nullable=True)
+    current_medications = Column(JSON, default=list)
+    allergies = Column(JSON, default=list)
+    lifestyle_factors = Column(JSON, default=dict)
     
-    # AI Analysis
-    ai_analysis = Column(Text, nullable=True)
-    potential_conditions = Column(JSON, nullable=True)  # List of possible conditions
-    recommended_actions = Column(JSON, nullable=True)  # Suggested next steps
-    urgency_level = Column(String(20), nullable=True)  # low, medium, high, emergency
+    # AI analysis results
+    ai_analysis_summary = Column(Text, nullable=True)
+    confidence_level = Column(Integer, nullable=True)  # 0-100
+    requires_immediate_attention = Column(Boolean, default=False)
     
-    # Patient information at time of report
-    patient_age = Column(Integer, nullable=True)
-    patient_gender = Column(String(20), nullable=True)
-    relevant_medical_history = Column(Text, nullable=True)
-    current_medications = Column(Text, nullable=True)
-    known_allergies = Column(Text, nullable=True)
-    
-    # Report status and sharing
-    is_shared = Column(Boolean, default=False)
-    shared_at = Column(DateTime(timezone=True), nullable=True)
-    healthcare_provider_email = Column(String(255), nullable=True)
+    # Generated reports
+    structured_report = Column(JSON, default=dict)  # For healthcare providers
+    patient_summary = Column(Text, nullable=True)  # For patients
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-    # Quality metrics
-    conversation_completeness = Column(Float, nullable=True)  # 0.0 to 1.0
-    information_quality = Column(Float, nullable=True)  # 0.0 to 1.0
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="symptom_reports")
-    conversation = relationship("Conversation", back_populates="symptom_reports")
+    conversation = relationship("Conversation")
     
     def __repr__(self):
-        return f"<SymptomReport(id={self.id}, report_code='{self.report_code}', user_id={self.user_id})>" 
+        return f"<SymptomReport(id={self.id}, title='{self.title}', status='{self.status}')>"
+
+
+class SymptomEntry(Base):
+    __tablename__ = "symptom_entries"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("symptom_reports.id"), nullable=False)
+    
+    # Symptom details
+    symptom_name = Column(String, nullable=False)
+    symptom_category = Column(String, nullable=True)  # pain, digestive, respiratory, etc.
+    description = Column(Text, nullable=True)
+    
+    # Characteristics
+    severity = Column(Integer, nullable=True)  # 1-10 scale
+    duration = Column(String, nullable=True)  # "2 days", "1 week", etc.
+    frequency = Column(String, nullable=True)  # "constant", "intermittent", etc.
+    triggers = Column(JSON, default=list)  # What makes it worse/better
+    
+    # Location (for physical symptoms)
+    body_location = Column(String, nullable=True)
+    location_specificity = Column(String, nullable=True)  # "left side", "upper", etc.
+    
+    # Timestamps
+    symptom_onset = Column(DateTime(timezone=True), nullable=True)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    report = relationship("SymptomReport")
+    
+    def __repr__(self):
+        return f"<SymptomEntry(id={self.id}, symptom_name='{self.symptom_name}', severity={self.severity})>" 
