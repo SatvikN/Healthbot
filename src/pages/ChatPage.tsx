@@ -17,6 +17,9 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Chat as ChatIcon,
+  Edit as EditIcon,
+  Check as CheckIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 
@@ -31,6 +34,8 @@ const ChatPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const [demoConversations, setDemoConversations] = useState<Conversation[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [editingConversationId, setEditingConversationId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const queryClient = useQueryClient();
   const { showMessage } = useSnackbar();
 
@@ -199,6 +204,44 @@ const ChatPage: React.FC = () => {
     }
   );
 
+  // Title update mutation for demo mode
+  const updateTitleMutation = useMutation(
+    ({ conversationId, title }: { conversationId: number; title: string }) => {
+      // For demo mode, just update local state
+      return new Promise<any>((resolve) => {
+        setTimeout(() => {
+          resolve({ status: 'success', new_title: title });
+        }, 500);
+      });
+    },
+    {
+      onSuccess: (response: any, variables) => {
+        // Update the demo conversations
+        setDemoConversations(prev => 
+          prev.map(conv => 
+            conv.id === variables.conversationId 
+              ? { ...conv, title: variables.title }
+              : conv
+          )
+        );
+        
+        // Update selected conversation if it's the one being edited
+        if (selectedConversation?.id === variables.conversationId) {
+          setSelectedConversation(prev => 
+            prev ? { ...prev, title: variables.title } : null
+          );
+        }
+        
+        setEditingConversationId(null);
+        setEditingTitle('');
+        showMessage('Title updated successfully', 'success');
+      },
+      onError: () => {
+        showMessage('Failed to update title', 'error');
+      },
+    }
+  );
+
   const sendMessage = (messageText: string) => {
     if (!selectedConversation || !messageText.trim()) return;
 
@@ -234,6 +277,25 @@ const ChatPage: React.FC = () => {
       event.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleStartEditTitle = (conversation: Conversation) => {
+    setEditingConversationId(conversation.id);
+    setEditingTitle(conversation.title || conversation.chief_complaint || 'Consultation');
+  };
+
+  const handleSaveTitle = () => {
+    if (editingConversationId && editingTitle.trim()) {
+      updateTitleMutation.mutate({
+        conversationId: editingConversationId,
+        title: editingTitle.trim(),
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingConversationId(null);
+    setEditingTitle('');
   };
 
   if (conversationsLoading && conversations.length === 0) {
@@ -320,24 +382,92 @@ const ChatPage: React.FC = () => {
                       sx={{
                         p: 2,
                         mb: 1,
-                        cursor: 'pointer',
+                        cursor: editingConversationId === conv.id ? 'default' : 'pointer',
                         bgcolor:
                           selectedConversation?.id === conv.id
                             ? 'primary.light'
                             : 'background.default',
                         '&:hover': {
-                          bgcolor: 'primary.light',
+                          bgcolor: editingConversationId === conv.id ? (
+                            selectedConversation?.id === conv.id ? 'primary.light' : 'background.default'
+                          ) : 'primary.light',
                         },
                         transition: 'background-color 0.2s',
                       }}
-                      onClick={() => setSelectedConversation(conv)}
+                      onClick={() => editingConversationId !== conv.id && setSelectedConversation(conv)}
                     >
-                      <Typography variant="subtitle2" noWrap>
-                        {conv.title || conv.chief_complaint || 'Consultation'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(conv.started_at).toLocaleDateString()}
-                      </Typography>
+                      <Box display="flex" alignItems="center" justifyContent="space-between">
+                        {editingConversationId === conv.id ? (
+                          <Box display="flex" alignItems="center" gap={1} width="100%">
+                            <TextField
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              variant="outlined"
+                              size="small"
+                              fullWidth
+                              autoFocus
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleSaveTitle();
+                                } else if (e.key === 'Escape') {
+                                  handleCancelEdit();
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              sx={{ fontSize: '0.875rem' }}
+                            />
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSaveTitle();
+                              }}
+                              disabled={updateTitleMutation.isLoading}
+                              color="primary"
+                            >
+                              <CheckIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelEdit();
+                              }}
+                              disabled={updateTitleMutation.isLoading}
+                            >
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        ) : (
+                          <>
+                            <Box flexGrow={1}>
+                              <Typography variant="subtitle2" noWrap>
+                                {conv.title || conv.chief_complaint || 'Consultation'}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {new Date(conv.started_at).toLocaleDateString()}
+                              </Typography>
+                            </Box>
+                            <Tooltip title="Edit title">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEditTitle(conv);
+                                }}
+                                sx={{
+                                  opacity: 0.6,
+                                  '&:hover': {
+                                    opacity: 1,
+                                  },
+                                }}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        )}
+                      </Box>
                     </Paper>
                   ))
                 )}
@@ -350,8 +480,8 @@ const ChatPage: React.FC = () => {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              position: sidebarCollapsed ? 'static' : 'absolute',
-              right: sidebarCollapsed ? 0 : -20,
+              position: 'absolute',
+              right: -20,
               top: '50%',
               transform: 'translateY(-50%)',
               zIndex: 1000,

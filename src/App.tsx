@@ -13,7 +13,6 @@ import Layout from './components/Layout/Layout';
 // import RegisterPage from './pages/RegisterPage';
 import ChatPage from './pages/ChatPage';
 import DashboardPage from './pages/DashboardPage';
-import ConversationsPage from './pages/ConversationsPage';
 import ReportsPage from './pages/ReportsPage';
 import ProfilePage from './pages/ProfilePage';
 
@@ -117,7 +116,6 @@ function App() {
                   {/* All routes are now public for development */}
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/chat" element={<ChatPage />} />
-                  <Route path="/conversations" element={<ConversationsPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/" element={<Navigate to="/chat" />} />

@@ -45,6 +45,10 @@ class StartConversationRequest(BaseModel):
     chief_complaint: Optional[str] = None
 
 
+class UpdateTitleRequest(BaseModel):
+    title: str
+
+
 @router.post("/start", response_model=Dict[str, Any])
 async def start_new_conversation(
     request: StartConversationRequest,
@@ -326,6 +330,54 @@ async def complete_conversation(
         "status": "completed",
         "message": "Conversation marked as completed",
         "conversation_id": conversation_id
+    }
+
+
+@router.put("/conversation/{conversation_id}/title")
+async def update_conversation_title(
+    conversation_id: int,
+    request: UpdateTitleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update the title of a conversation."""
+    
+    # Validate title length
+    if not request.title.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Title cannot be empty"
+        )
+    
+    if len(request.title) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Title cannot exceed 100 characters"
+        )
+    
+    # Find the conversation
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    # Update the title
+    conversation.title = request.title.strip()
+    conversation.updated_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": "Title updated successfully",
+        "conversation_id": conversation_id,
+        "new_title": conversation.title
     }
 
 

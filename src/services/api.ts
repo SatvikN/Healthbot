@@ -158,6 +158,13 @@ export const chatAPI = {
     const response: AxiosResponse<Conversation[]> = await api.get('/api/chat/test-data');
     return response.data;
   },
+
+  updateConversationTitle: async (conversationId: number, title: string): Promise<any> => {
+    const response: AxiosResponse<any> = await api.put(`/api/chat/conversation/${conversationId}/title`, {
+      title,
+    });
+    return response.data;
+  },
 };
 
 export const symptomsAPI = {

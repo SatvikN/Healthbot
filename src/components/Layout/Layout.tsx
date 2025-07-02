@@ -22,7 +22,6 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Chat as ChatIcon,
-  History as HistoryIcon,
   Description as ReportsIcon,
   Person as PersonIcon,
   // Logout as LogoutIcon,
@@ -68,7 +67,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Chat', icon: <ChatIcon />, path: '/chat' },
-    { text: 'Conversations', icon: <HistoryIcon />, path: '/conversations' },
     { text: 'Reports', icon: <ReportsIcon />, path: '/reports' },
     { text: 'Profile', icon: <PersonIcon />, path: '/profile' },
   ];
