@@ -93,9 +93,16 @@ async def start_new_conversation(
         db.refresh(user_message)
         
         # Generate AI welcome response using LLM
-        async with LLMService() as llm_service:
-            welcome_response = await _generate_welcome_response_llm(
-                llm_service, request.initial_message, request.chief_complaint
+        try:
+            async with LLMService() as llm_service:
+                welcome_response = await _generate_welcome_response_llm(
+                    llm_service, request.initial_message, request.chief_complaint
+                )
+        except Exception as llm_error:
+            logger.warning(f"LLM service failed for welcome response: {str(llm_error)}")
+            # Use fallback response
+            welcome_response = _generate_fallback_welcome_response(
+                request.initial_message, request.chief_complaint
             )
         
         # Save AI message
@@ -183,10 +190,15 @@ async def send_message(
         conversation_history = _get_conversation_history(db, conversation.id)
         
         # Generate intelligent response using LLM
-        async with LLMService() as llm_service:
-            ai_response = await _generate_smart_response_llm(
-                llm_service, request.content, conversation_history
-            )
+        try:
+            async with LLMService() as llm_service:
+                ai_response = await _generate_smart_response_llm(
+                    llm_service, request.content, conversation_history
+                )
+        except Exception as llm_error:
+            logger.warning(f"LLM service failed for smart response: {str(llm_error)}")
+            # Use fallback response
+            ai_response = _generate_fallback_smart_response(request.content, conversation_history)
         
         # Analyze if response requires follow-up
         requires_followup = _requires_followup(ai_response)
@@ -213,9 +225,17 @@ async def send_message(
             try:
                 # Get updated conversation history including the new messages
                 updated_history = _get_conversation_history(db, conversation.id)
-                diagnosis_prediction = await _generate_diagnosis_llm(
-                    llm_service, updated_history, current_user
-                )
+                
+                # Try to generate diagnosis with LLM
+                try:
+                    async with LLMService() as diagnosis_llm_service:
+                        diagnosis_prediction = await _generate_diagnosis_llm(
+                            diagnosis_llm_service, updated_history, current_user
+                        )
+                except Exception as llm_error:
+                    logger.warning(f"LLM service failed for automatic diagnosis: {str(llm_error)}")
+                    diagnosis_prediction = "Unable to generate diagnosis prediction at this time."
+                    
             except Exception as e:
                 logger.warning(f"Failed to generate automatic diagnosis: {e}")
                 diagnosis_prediction = "Unable to generate diagnosis prediction at this time."
@@ -394,10 +414,15 @@ async def generate_diagnosis_recommendations(
             )
         
         # Generate diagnosis using LLM
-        async with LLMService() as llm_service:
-            diagnosis_response = await _generate_diagnosis_llm(
-                llm_service, conversation_history, current_user
-            )
+        try:
+            async with LLMService() as llm_service:
+                diagnosis_response = await _generate_diagnosis_llm(
+                    llm_service, conversation_history, current_user
+                )
+        except Exception as llm_error:
+            logger.warning(f"LLM service failed for diagnosis: {str(llm_error)}")
+            # Use fallback diagnosis response
+            diagnosis_response = "I'm unable to generate specific recommendations at this time. Please consult with a healthcare provider for proper evaluation of your symptoms."
         
         # Save AI diagnosis message
         ai_message = Message(
@@ -590,8 +615,16 @@ async def generate_medical_report(
         
     except Exception as e:
         logger.error(f"Error generating medical report: {str(e)}")
+        db.rollback()
         # Return fallback report if LLM fails
-        fallback_content = _generate_fallback_medical_report(conversation_history, current_user)
+        try:
+            fallback_content = _generate_fallback_medical_report(conversation_history, current_user)
+        except Exception as fallback_error:
+            logger.error(f"Error generating fallback medical report: {str(fallback_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate medical report"
+            )
         
         report = MedicalReport(
             user_id=current_user.id,
@@ -638,24 +671,39 @@ async def generate_medical_report(
 # Helper functions
 def _get_conversation_history(db: Session, conversation_id: int) -> List[Dict]:
     """Get conversation history formatted for AI processing."""
-    messages = db.query(Message).filter(
-        Message.conversation_id == conversation_id
-    ).order_by(Message.created_at.asc()).all()
-    
-    history = []
-    for msg in messages:
-        # Use the role field from the database which stores user/assistant/system
-        # Add defensive handling for None or empty role values
-        role = msg.role if msg.role else "user"  # Default to user if role is None/empty
-        content = msg.content if msg.content else ""  # Default to empty string if content is None
+    try:
+        messages = db.query(Message).filter(
+            Message.conversation_id == conversation_id
+        ).order_by(Message.created_at.asc()).all()
         
-        history.append({
-            "role": role,  # This field contains user/assistant/system
-            "content": content,
-            "created_at": msg.created_at.isoformat() if msg.created_at else ""
-        })
-    
-    return history
+        history = []
+        for msg in messages:
+            # Extra defensive handling for message objects
+            if not hasattr(msg, 'role') or not hasattr(msg, 'content'):
+                logger.warning(f"Invalid message object found: {msg}")
+                continue
+                
+            # Use the role field from the database which stores user/assistant/system
+            # Add defensive handling for None or empty role values
+            role = str(msg.role).strip() if msg.role else "user"  # Default to user if role is None/empty
+            content = str(msg.content) if msg.content else ""  # Default to empty string if content is None
+            
+            # Validate role values
+            if role not in ["user", "assistant", "system"]:
+                role = "user"  # Default to user for invalid roles
+            
+            history.append({
+                "role": role,  # This field contains user/assistant/system
+                "content": content,
+                "created_at": msg.created_at.isoformat() if msg.created_at else "",
+                "id": msg.id if hasattr(msg, 'id') else None
+            })
+        
+        return history
+        
+    except Exception as e:
+        logger.error(f"Error getting conversation history: {str(e)}")
+        return []  # Return empty list on error
 
 
 def _contains_symptoms(content: str) -> bool:
@@ -989,15 +1037,30 @@ async def _generate_medical_report_llm(
     for msg in conversation_history:
         # Extra defensive handling for message data
         if not isinstance(msg, dict):
+            logger.warning(f"Invalid message format in conversation history: {type(msg)}")
             continue  # Skip invalid messages
             
-        # Safely get role with fallback
-        msg_role = msg.get("role", "user")  # Default to user if missing
-        role = "Patient" if msg_role == "user" else "AI Assistant"
-        content = msg.get("content", "")
+        # Safely get role with multiple fallback options
+        msg_role = None
+        if "role" in msg:
+            msg_role = msg["role"]
+        elif "message_type" in msg:
+            msg_role = msg["message_type"]
+        else:
+            msg_role = "user"  # Default fallback
+            
+        # Normalize role values
+        if msg_role in ["user", "patient"]:
+            role = "Patient"
+        elif msg_role in ["assistant", "ai", "system"]:
+            role = "AI Assistant"
+        else:
+            role = "Patient"  # Default fallback
+            
+        content = str(msg.get("content", "")).strip()
         
         # Only add non-empty content
-        if content.strip():
+        if content:
             conversation_text += f"{role}: {content}\n\n"
     
     system_prompt = f"""You are a medical documentation specialist. Generate a formal medical report based on the patient conversation below.
@@ -1085,12 +1148,22 @@ def _generate_fallback_medical_report(conversation_history: List[Dict], user: Us
     
     for msg in conversation_history:
         if not isinstance(msg, dict):
+            logger.warning(f"Invalid message format in fallback report generation: {type(msg)}")
             continue  # Skip invalid messages
             
-        msg_role = msg.get("role", "user")  # Default to user if missing
-        if msg_role == "user":
+        # Safely get role with multiple fallback options
+        msg_role = None
+        if "role" in msg:
+            msg_role = msg["role"]
+        elif "message_type" in msg:
+            msg_role = msg["message_type"]
+        else:
+            msg_role = "user"  # Default fallback
+            
+        # Normalize and categorize messages
+        if msg_role in ["user", "patient"]:
             user_messages.append(msg)
-        elif msg_role == "assistant":
+        elif msg_role in ["assistant", "ai", "system"]:
             ai_messages.append(msg)
     
     # Extract potential symptoms from user messages
