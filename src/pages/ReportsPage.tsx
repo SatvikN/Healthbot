@@ -74,130 +74,7 @@ const ReportsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Demo fallback data
-  const demoReports: MedicalReport[] = [
-    {
-      id: 1,
-      title: 'Headache Assessment Report',
-      type: 'initial_consultation',
-      status: 'completed',
-      createdAt: '2024-01-15T14:30:00Z',
-      conversationId: 1,
-      conversationTitle: 'Headache Consultation',
-      summary: 'Initial consultation report for persistent headache symptoms. Patient describes throbbing pain, moderate intensity (6/10), with triggers including stress and lack of sleep.',
-      urgencyLevel: 'medium',
-      keyFindings: [
-        'Persistent headache for 3 days',
-        'Throbbing pain pattern',
-        'Pain intensity: 6/10',
-        'Triggers: stress, lack of sleep',
-        'No fever or neurological symptoms'
-      ],
-      recommendations: [
-        'Consider stress management techniques',
-        'Maintain regular sleep schedule',
-        'Monitor pain patterns',
-        'Consult healthcare provider if symptoms persist'
-      ],
-      fileSize: '2.3 MB'
-    },
-    {
-      id: 2,
-      title: 'General Health Consultation',
-      type: 'initial_consultation',
-      status: 'completed',
-      createdAt: '2024-01-14T10:15:00Z',
-      conversationId: 2,
-      conversationTitle: 'General Health Check',
-      summary: 'Comprehensive health consultation covering overall wellness, medication compliance, and preventive care recommendations.',
-      urgencyLevel: 'low',
-      keyFindings: [
-        'No significant health concerns',
-        'Regular medication compliance',
-        'Stable vital signs reported',
-        'Good sleep quality'
-      ],
-      recommendations: [
-        'Continue current medication regimen',
-        'Maintain healthy lifestyle',
-        'Schedule routine check-up',
-        'Monitor blood pressure weekly'
-      ],
-      fileSize: '1.8 MB'
-    },
-    {
-      id: 3,
-      title: 'Back Pain - Weekly Tracking',
-      type: 'symptom_tracking',
-      status: 'completed',
-      createdAt: '2024-01-13T16:45:00Z',
-      conversationId: 3,
-      conversationTitle: 'Lower Back Pain',
-      summary: 'Weekly symptom tracking report for lower back pain. Monitoring pain patterns, triggers, and effectiveness of current management strategies.',
-      urgencyLevel: 'medium',
-      keyFindings: [
-        'Lower back pain onset after exercise',
-        'Sharp pain with movement',
-        'Limited range of motion',
-        'No radiating pain to legs'
-      ],
-      recommendations: [
-        'Rest and avoid strenuous activity',
-        'Apply ice for 15-20 minutes',
-        'Gentle stretching exercises',
-        'Consider physical therapy consultation'
-      ],
-      fileSize: '2.1 MB'
-    },
-    {
-      id: 4,
-      title: 'Respiratory Symptoms Follow-up',
-      type: 'follow_up',
-      status: 'in_progress',
-      createdAt: '2024-01-12T09:30:00Z',
-      conversationId: 4,
-      conversationTitle: 'Cough and Congestion',
-      summary: 'Follow-up report on respiratory symptoms showing improvement with current treatment plan. Tracking recovery progress.',
-      urgencyLevel: 'low',
-      keyFindings: [
-        'Cough frequency decreased',
-        'Congestion improving',
-        'No fever present',
-        'Good medication tolerance'
-      ],
-      recommendations: [
-        'Continue current medication',
-        'Increase fluid intake',
-        'Use humidifier at night',
-        'Follow up in 1 week'
-      ],
-      fileSize: '1.5 MB'
-    },
-    {
-      id: 5,
-      title: 'Chest Pain Follow-up Review',
-      type: 'follow_up',
-      status: 'pending',
-      createdAt: '2024-01-11T20:15:00Z',
-      conversationId: 5,
-      conversationTitle: 'Chest Discomfort',
-      summary: 'Follow-up review of chest discomfort symptoms after initial emergency evaluation. Monitoring ongoing symptoms and treatment response.',
-      urgencyLevel: 'high',
-      keyFindings: [
-        'Chest discomfort reported',
-        'Associated shortness of breath',
-        'Symptoms during physical activity',
-        'No previous cardiac history'
-      ],
-      recommendations: [
-        'Continue cardiac monitoring',
-        'Follow up with cardiologist',
-        'Avoid strenuous physical activity',
-        'Take prescribed medications as directed'
-      ],
-      fileSize: '3.2 MB'
-    }
-  ];
+
 
   // Load reports from backend
   const loadReports = async () => {
@@ -233,9 +110,9 @@ const ReportsPage: React.FC = () => {
     } catch (err) {
       console.error('Failed to load reports from backend:', err);
       
-      // Fallback to demo data if backend fails
-      setReports(demoReports);
-      setError('Using demo data - backend unavailable');
+      // Set empty reports if API fails
+      setReports([]);
+      setError('Failed to load reports from API. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -333,15 +210,15 @@ const ReportsPage: React.FC = () => {
     <Container maxWidth="lg" sx={{ py: 3 }}>
       {/* Status Banner */}
       {error ? (
-        <Paper sx={{ p: 2, mb: 3, bgcolor: 'warning.light', borderRadius: 2 }}>
-          <Typography variant="body2" color="warning.dark" textAlign="center">
-            ⚠️ <strong>Demo Mode:</strong> {error}. Using sample data for demonstration.
+        <Paper sx={{ p: 2, mb: 3, bgcolor: 'error.light', borderRadius: 2 }}>
+          <Typography variant="body2" color="error.dark" textAlign="center">
+            ❌ <strong>Connection Error:</strong> {error}
           </Typography>
         </Paper>
       ) : (
         <Paper sx={{ p: 2, mb: 3, bgcolor: 'success.light', borderRadius: 2 }}>
           <Typography variant="body2" color="success.dark" textAlign="center">
-            ✅ <strong>Live Mode:</strong> Connected to backend API. Reports generated from actual conversations.
+            ✅ <strong>Connected:</strong> Loading reports from backend API.
           </Typography>
         </Paper>
       )}

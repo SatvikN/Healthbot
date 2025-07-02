@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -32,74 +32,34 @@ const ChatPage: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [message, setMessage] = useState('');
-  const [demoConversations, setDemoConversations] = useState<Conversation[]>([]);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [editingConversationId, setEditingConversationId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const queryClient = useQueryClient();
   const { showMessage } = useSnackbar();
 
-  // Initialize demo conversations for development
-  useEffect(() => {
-    const initDemoData = () => {
-      const demoConvs: Conversation[] = [
-        {
-          id: 1,
-          title: "Headache Consultation",
-          chief_complaint: "Persistent headache for 3 days", 
-          status: "active",
-          started_at: new Date().toISOString(),
-          messages: [
-            {
-              id: 1,
-              content: "I've been having a persistent headache for 3 days",
-              message_type: 'user' as const,
-              created_at: new Date(Date.now() - 60000).toISOString(),
-            },
-            {
-              id: 2,
-              content: "Hello! I understand you're experiencing headache pain. I'm here to help you describe your symptoms in detail so we can create a comprehensive report for your healthcare provider.\n\nLet me ask a few questions to better understand your situation:\n\n• When did your headache start?\n• How would you rate the pain intensity on a scale of 1-10?\n• Can you describe the type of pain (throbbing, sharp, dull, pressure)?\n• What makes it better or worse?\n\nPlease remember, I'm not a doctor and cannot provide medical diagnoses. My role is to help organize your symptoms for your healthcare provider.",
-              message_type: 'assistant' as const,
-              created_at: new Date().toISOString(),
-            }
-          ]
-        }
-      ];
-      setDemoConversations(demoConvs);
-      setSelectedConversation(demoConvs[0]);
-    };
 
-    initDemoData();
-  }, []);
 
-  // Fetch conversations - using test data for development
+  // Fetch conversations from API
   const {
-    data: conversations = demoConversations,
+    data: conversations = [],
     isLoading: conversationsLoading,
-  } = useQuery('conversations', () => Promise.resolve(demoConversations), {
-    enabled: demoConversations.length > 0
+  } = useQuery('conversations', async () => {
+    const { chatAPI } = await import('../services/api');
+    return chatAPI.getConversations();
+  }, {
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+    cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    refetchOnWindowFocus: false, // Don't refetch when user focuses window
+    refetchOnReconnect: false, // Don't refetch on reconnect
   });
 
-  // Demo message sending for development
+  // Send message to API
   const sendMessageMutation = useMutation(
-    ({ conversationId, message }: { conversationId: number; message: string }) => {
-      // Simulate API call with demo response
-      return new Promise<any>((resolve) => {
-        setTimeout(() => {
-          resolve({
-            user_message: {
-              id: Date.now(),
-              content: message,
-              created_at: new Date().toISOString(),
-            },
-            ai_message: {
-              id: Date.now() + 1,
-              content: generateDemoResponse(message),
-              created_at: new Date().toISOString(),
-            }
-          });
-        }, 1000);
-      });
+    async ({ conversationId, message }: { conversationId: number; message: string }) => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.sendMessage(conversationId, message);
     },
     {
       onSuccess: (response: any) => {
@@ -127,45 +87,25 @@ const ChatPage: React.FC = () => {
           
           const updatedConversation = {
             ...selectedConversation,
-            messages: [...selectedConversation.messages, ...newMessages],
+            messages: [...(selectedConversation.messages || []), ...newMessages],
           };
           setSelectedConversation(updatedConversation);
           
-          // Update the demo conversations
-          setDemoConversations(prev => 
-            prev.map(conv => 
-              conv.id === selectedConversation.id ? updatedConversation : conv
-            )
-          );
         }
-        queryClient.invalidateQueries('conversations');
+        // No need to invalidate conversations - we're updating state directly
       },
       onError: (error: any) => {
-        showMessage('Demo mode: Message sent successfully!', 'success');
+        showMessage('Failed to send message. Please try again.', 'error');
+        console.error('Error sending message:', error);
       },
     }
   );
 
-  // Demo conversation creation
+  // Start conversation via API
   const startConversationMutation = useMutation(
-    ({ chiefComplaint }: { chiefComplaint: string }) => {
-      return new Promise<any>((resolve) => {
-        setTimeout(() => {
-          resolve({
-            conversation_id: Date.now(),
-            user_message: {
-              id: Date.now(),
-              content: chiefComplaint,
-              created_at: new Date().toISOString(),
-            },
-            ai_message: {
-              id: Date.now() + 1,
-              content: generateWelcomeResponse(chiefComplaint),
-              created_at: new Date().toISOString(),
-            }
-          });
-        }, 1000);
-      });
+    async ({ chiefComplaint }: { chiefComplaint: string }) => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.startConversation(chiefComplaint);
     },
     {
       onSuccess: (response: any, variables) => {
@@ -192,39 +132,27 @@ const ChatPage: React.FC = () => {
           ],
         };
         
-        setDemoConversations(prev => [newConversation, ...prev]);
         setSelectedConversation(newConversation);
         setStartDialogOpen(false);
+        // Only invalidate conversations list when a new conversation is created
         queryClient.invalidateQueries('conversations');
         showMessage('New consultation started', 'success');
       },
       onError: (error: any) => {
-        showMessage('Demo mode: Conversation started!', 'success');
+        showMessage('Failed to start conversation. Please try again.', 'error');
+        console.error('Error starting conversation:', error);
       },
     }
   );
 
-  // Title update mutation for demo mode
+  // Title update mutation
   const updateTitleMutation = useMutation(
-    ({ conversationId, title }: { conversationId: number; title: string }) => {
-      // For demo mode, just update local state
-      return new Promise<any>((resolve) => {
-        setTimeout(() => {
-          resolve({ status: 'success', new_title: title });
-        }, 500);
-      });
+    async ({ conversationId, title }: { conversationId: number; title: string }) => {
+      const { chatAPI } = await import('../services/api');
+      return chatAPI.updateConversationTitle(conversationId, title);
     },
     {
       onSuccess: (response: any, variables) => {
-        // Update the demo conversations
-        setDemoConversations(prev => 
-          prev.map(conv => 
-            conv.id === variables.conversationId 
-              ? { ...conv, title: variables.title }
-              : conv
-          )
-        );
-        
         // Update selected conversation if it's the one being edited
         if (selectedConversation?.id === variables.conversationId) {
           setSelectedConversation(prev => 
@@ -234,6 +162,15 @@ const ChatPage: React.FC = () => {
         
         setEditingConversationId(null);
         setEditingTitle('');
+        // Optimistic update - only invalidate conversations when necessary
+        queryClient.setQueryData('conversations', (oldData: any) => {
+          if (!oldData) return oldData;
+          return oldData.map((conv: any) => 
+            conv.id === variables.conversationId 
+              ? { ...conv, title: variables.title }
+              : conv
+          );
+        });
         showMessage('Title updated successfully', 'success');
       },
       onError: () => {
@@ -267,6 +204,9 @@ const ChatPage: React.FC = () => {
       setSelectedConversation(conversations[0]);
     }
   }, [conversations, selectedConversation]);
+
+  // Memoize filtered conversations to prevent re-renders
+  const memoizedConversations = useMemo(() => conversations, [conversations]);
 
   const handleStartConversation = (chiefComplaint: string) => {
     startConversationMutation.mutate({ chiefComplaint });
@@ -308,14 +248,7 @@ const ChatPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, height: 'calc(100vh - 140px)' }}>
-      {/* Demo Mode Banner & Disclaimer */}
-      <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <Paper sx={{ p: 2, bgcolor: 'info.light', borderRadius: 2 }}>
-          <Typography variant="body2" color="info.dark" textAlign="center">
-            🚀 <strong>Demo Mode:</strong> You're experiencing the enhanced chat interface in development mode. All conversations are simulated.
-          </Typography>
-        </Paper>
-        
+      <Box sx={{ mb: 2 }}>
         <Paper sx={{ p: 1.5, bgcolor: 'warning.light', borderRadius: 2 }}>
           <Typography variant="caption" color="warning.dark" textAlign="center" display="block">
             ⚠️ <strong>Medical Disclaimer:</strong> This is an AI assistant for informational purposes only. Always consult with healthcare professionals for medical advice.
@@ -367,7 +300,7 @@ const ChatPage: React.FC = () => {
               </Box>
 
               <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-                {conversations.length === 0 ? (
+                {memoizedConversations.length === 0 ? (
                   <Box textAlign="center" py={4}>
                     <Typography variant="body2" color="text.secondary">
                       No consultations yet.
@@ -376,7 +309,7 @@ const ChatPage: React.FC = () => {
                     </Typography>
                   </Box>
                 ) : (
-                  conversations.map((conv) => (
+                  memoizedConversations.map((conv) => (
                     <Paper
                       key={conv.id}
                       sx={{
@@ -540,7 +473,7 @@ const ChatPage: React.FC = () => {
               </Tooltip>
 
               <Box sx={{ flexGrow: 1, overflowY: 'auto', width: '100%' }}>
-                {conversations.map((conv, index) => (
+                {memoizedConversations.map((conv, index) => (
                   <Tooltip
                     key={conv.id}
                     title={conv.title || conv.chief_complaint || 'Consultation'}
@@ -674,55 +607,5 @@ const ChatPage: React.FC = () => {
     </Container>
   );
 };
-
-// Demo response generators
-function generateDemoResponse(userMessage: string): string {
-  const message = userMessage.toLowerCase();
-  
-  if (message.includes('started') || message.includes('ago') || message.includes('yesterday')) {
-    return "Thank you for that timeline information. That's very helpful. Now, could you describe the severity or intensity of your symptoms? How would you rate them on a scale of 1-10?";
-  }
-  
-  if (message.match(/\b[1-9]|10\b/) || message.includes('mild') || message.includes('severe')) {
-    return "Thank you for rating your symptoms. That helps me understand the severity. Are there any specific triggers or activities that make your symptoms better or worse?";
-  }
-  
-  if (message.includes('better') || message.includes('worse') || message.includes('rest') || message.includes('movement')) {
-    return "That's important information about what affects your symptoms. Are you currently taking any medications or treatments for these symptoms? Also, have you noticed any other symptoms occurring along with your main concern?";
-  }
-  
-  if (message.includes('medication') || message.includes('ibuprofen') || message.includes('acetaminophen')) {
-    return "Thank you for sharing that medication information. It's important to include current treatments in your medical record. Is there anything else about your symptoms that you think would be important for your healthcare provider to know?";
-  }
-  
-  if (message.includes('no') || message.includes('none')) {
-    return "I understand. Let's explore other aspects of your symptoms. Are there any other symptoms or concerns you'd like to discuss?";
-  }
-  
-  if (message.includes('yes') || message.includes('also')) {
-    return "Thank you for providing that additional information. Could you tell me more about these other symptoms? When did they start and how severe are they?";
-  }
-  
-  // Default response
-  return "Thank you for sharing that information. To help create a complete picture for your healthcare provider, could you tell me more about when these symptoms started and how you would rate their severity on a scale of 1-10?";
-}
-
-function generateWelcomeResponse(chiefComplaint: string): string {
-  const complaint = chiefComplaint.toLowerCase();
-  
-  if (complaint.includes('headache') || complaint.includes('head')) {
-    return "Hello! I understand you're experiencing headache pain. I'm here to help you describe your symptoms in detail so we can create a comprehensive report for your healthcare provider.\n\nLet me ask a few questions to better understand your situation:\n\n• When did your headache start?\n• How would you rate the pain intensity on a scale of 1-10?\n• Can you describe the type of pain (throbbing, sharp, dull, pressure)?\n• What makes it better or worse?\n\nPlease remember, I'm not a doctor and cannot provide medical diagnoses. My role is to help organize your symptoms for your healthcare provider.";
-  }
-  
-  if (complaint.includes('back') || complaint.includes('spine')) {
-    return "Hello! I see you're experiencing back pain. I'm here to help gather detailed information about your symptoms for your healthcare provider.\n\nTo better understand your back pain, could you tell me:\n\n• Where exactly is the pain located (lower back, upper back, between shoulder blades)?\n• When did it start and what were you doing when it began?\n• How would you rate the pain on a scale of 1-10?\n• Does the pain radiate to other areas (legs, arms, etc.)?\n\nI'll help you organize this information into a clear report, but please remember that I cannot provide medical diagnoses.";
-  }
-  
-  if (complaint.includes('fever') || complaint.includes('temperature')) {
-    return "Hello! I understand you're dealing with fever symptoms. I'm here to help document your symptoms for your healthcare provider.\n\nLet's gather some important details:\n\n• What is your current temperature if you've measured it?\n• When did the fever start?\n• Are you experiencing any other symptoms along with the fever (headache, body aches, nausea)?\n• Have you taken any medications for the fever?\n\nPlease note: If your fever is very high (over 103°F/39.4°C) or you're having difficulty breathing, please seek immediate medical attention.";
-  }
-  
-  return `Hello! I'm your medical assistant and I'm here to help you describe your symptoms and gather information for your healthcare provider.\n\nI see you mentioned: "${chiefComplaint}"\n\nPlease note that I'm not a doctor and cannot provide medical diagnoses. My role is to help you organize your symptoms into a clear, comprehensive report that you can share with your healthcare provider.\n\nCould you tell me more about:\n• When did these symptoms start?\n• How severe are they on a scale of 1-10?\n• What makes them better or worse?\n• Any other symptoms you're experiencing?\n\nLet's work together to document everything properly.`;
-}
 
 export default ChatPage; 

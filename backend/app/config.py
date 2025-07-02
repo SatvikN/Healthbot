@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     # Ollama/LLM
     OLLAMA_URL: str = "http://localhost:11434"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama2:7b"
-    DEFAULT_MODEL: str = "llama2:7b"
-    MEDICAL_MODEL: str = "llama2:7b"  # Can be upgraded to medical-specific models
+    ollama_model: str = "llama3.2:3b"
+    DEFAULT_MODEL: str = "llama3.2:3b"
+    MEDICAL_MODEL: str = "llama3.2:3b"  # Can be upgraded to medical-specific models
     
     # Security
     SECRET_KEY: str = "your-secret-key-here-change-in-production"

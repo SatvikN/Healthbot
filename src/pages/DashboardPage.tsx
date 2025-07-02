@@ -72,11 +72,11 @@ const DashboardPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch data from test endpoints (since auth isn't implemented yet)
+      // Fetch data from real API endpoints
       const [conversations, symptoms, reports] = await Promise.all([
-        (chatAPI as any).getTestConversations().catch(() => []),
-        (symptomsAPI as any).getTestSymptoms().catch(() => []),
-        (reportsAPI as any).getTestReports().catch(() => []),
+        chatAPI.getConversations().catch(() => []),
+        symptomsAPI.getSymptoms().catch(() => []),
+        reportsAPI.getReports().catch(() => []),
       ]);
 
       console.log('🚀 Real API Data:', { conversations, symptoms, reports });
@@ -91,7 +91,7 @@ const DashboardPage: React.FC = () => {
           id: `conv-${conv.id}`,
           type: 'consultation',
           title: conv.title || conv.chief_complaint || 'Medical consultation',
-          timestamp: formatTimeAgo(conv.started_at),
+          timestamp: formatTimeAgo(conv.started_at || conv.created_at),
           status: conv.status,
           urgency: conv.status === 'active' ? 'high' : 'medium',
         })),
@@ -99,7 +99,7 @@ const DashboardPage: React.FC = () => {
           id: `symptom-${symptom.id}`,
           type: 'symptom',
           title: `Recorded ${symptom.name}`,
-          timestamp: formatTimeAgo(symptom.recorded_at),
+          timestamp: formatTimeAgo(symptom.recorded_at || symptom.onset_date),
           status: 'active',
           urgency: symptom.severity >= 7 ? 'high' : symptom.severity >= 4 ? 'medium' : 'low',
         })),
@@ -107,7 +107,7 @@ const DashboardPage: React.FC = () => {
           id: `report-${report.id}`,
           type: 'report',
           title: report.title,
-          timestamp: formatTimeAgo(report.generated_at),
+          timestamp: formatTimeAgo(report.generated_at || report.created_at),
           status: report.status,
           urgency: report.urgency_level || 'low',
         }))
@@ -128,49 +128,9 @@ const DashboardPage: React.FC = () => {
       setIsUsingRealAPI(true);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
-      setError('Failed to load dashboard data. Please try again.');
+      setError('Failed to load dashboard data from API. Please check your connection and try again.');
       setIsUsingRealAPI(false);
-      
-      // Fallback to mock data
-      setDashboardData({
-        healthStats: {
-          totalConsultations: 12,
-          activeSymptoms: 3,
-          completedReports: 8,
-          lastActivity: '2 days ago',
-        },
-        recentActivity: [
-          {
-            id: 1,
-            type: 'consultation',
-            title: 'Headache consultation',
-            timestamp: '2 hours ago',
-            status: 'completed',
-            urgency: 'medium',
-          },
-          {
-            id: 2,
-            type: 'symptom',
-            title: 'Recorded fever symptoms',
-            timestamp: '1 day ago',
-            status: 'active',
-            urgency: 'high',
-          },
-          {
-            id: 3,
-            type: 'report',
-            title: 'Medical report generated',
-            timestamp: '3 days ago',
-            status: 'completed',
-            urgency: 'low',
-          },
-        ],
-        currentSymptoms: [
-          { id: 1, name: 'Mild headache', severity: 4, category: 'Neurological', onset_date: new Date().toISOString() },
-          { id: 2, name: 'Fatigue', severity: 6, category: 'General', onset_date: new Date().toISOString() },
-          { id: 3, name: 'Sore throat', severity: 3, category: 'Respiratory', onset_date: new Date().toISOString() },
-        ],
-      });
+      setDashboardData(null);
     } finally {
       setLoading(false);
     }

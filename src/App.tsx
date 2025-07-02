@@ -4,13 +4,13 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from 'react-query';
 
-// import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SnackbarProvider } from './contexts/SnackbarContext';
 
 // Components
 import Layout from './components/Layout/Layout';
-// import LoginPage from './pages/LoginPage';
-// import RegisterPage from './pages/RegisterPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
 import ChatPage from './pages/ChatPage';
 import DashboardPage from './pages/DashboardPage';
 import ReportsPage from './pages/ReportsPage';
@@ -73,57 +73,87 @@ const queryClient = new QueryClient({
   },
 });
 
-// // Protected Route component - DISABLED FOR DEVELOPMENT
-// const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-//   const { isAuthenticated, loading } = useAuth();
+// Protected Route component
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
 
-//   if (loading) {
-//     return (
-//       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-//         Loading...
-//       </Box>
-//     );
-//   }
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        Loading...
+      </div>
+    );
+  }
 
-//   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
-// };
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+};
 
-// // Public Route component (redirect if authenticated) - DISABLED FOR DEVELOPMENT
-// const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-//   const { isAuthenticated, loading } = useAuth();
+// Public Route component (redirect if authenticated)
+const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
 
-//   if (loading) {
-//     return (
-//       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-//         Loading...
-//       </Box>
-//     );
-//   }
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        Loading...
+      </div>
+    );
+  }
 
-//   return !isAuthenticated ? <>{children}</> : <Navigate to="/dashboard" />;
-// };
+  return !isAuthenticated ? <>{children}</> : <Navigate to="/dashboard" />;
+};
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        {/* <AuthProvider> */}
+        <AuthProvider>
           <SnackbarProvider>
             <Router>
               <Layout>
                 <Routes>
-                  {/* All routes are now public for development */}
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/chat" element={<ChatPage />} />
-                  <Route path="/reports" element={<ReportsPage />} />
-                  <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/" element={<Navigate to="/chat" />} />
+                  {/* Public routes */}
+                  <Route path="/login" element={
+                    <PublicRoute>
+                      <LoginPage />
+                    </PublicRoute>
+                  } />
+                  <Route path="/register" element={
+                    <PublicRoute>
+                      <RegisterPage />
+                    </PublicRoute>
+                  } />
+                  
+                  {/* Protected routes */}
+                  <Route path="/dashboard" element={
+                    <ProtectedRoute>
+                      <DashboardPage />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/chat" element={
+                    <ProtectedRoute>
+                      <ChatPage />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/reports" element={
+                    <ProtectedRoute>
+                      <ReportsPage />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/profile" element={
+                    <ProtectedRoute>
+                      <ProfilePage />
+                    </ProtectedRoute>
+                  } />
+                  
+                  {/* Redirect root to dashboard for authenticated users, login for unauthenticated */}
+                  <Route path="/" element={<Navigate to="/dashboard" />} />
                 </Routes>
               </Layout>
             </Router>
           </SnackbarProvider>
-        {/* </AuthProvider> */}
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

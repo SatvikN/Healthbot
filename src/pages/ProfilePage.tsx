@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -14,6 +14,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -26,8 +28,11 @@ import {
   Email as EmailIcon,
   Phone as PhoneIcon,
   LocationOn as LocationIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useSnackbar } from '../contexts/SnackbarContext';
+import { useAuth } from '../contexts/AuthContext';
+import { authAPI } from '../services/api';
 
 interface UserProfile {
   fullName: string;
@@ -47,38 +52,120 @@ interface UserProfile {
 
 const ProfilePage: React.FC = () => {
   const { showMessage } = useSnackbar();
+  const { logout } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
   
-  // Demo user data
+  // User profile state
   const [profile, setProfile] = useState<UserProfile>({
-    fullName: 'First Last',
-    email: 'first.last@example.com',
-    dateOfBirth: '2000-01-01',
-    phone: '+1 (123) 456-7890',
-    address: '123 Main St, San Francisco, CA 94105',
-    emergencyContact: 'Emergency Contact - +1 (555) 987-6543',
-    medicalHistory: 'Hypertension (2018), Appendectomy (2015)',
-    allergies: ['Penicillin', 'Shellfish', 'Pollen'],
-    currentMedications: ['Lisinopril 10mg daily', 'Vitamin D3 1000IU'],
-    bloodType: 'O+',
-    height: "6'2\"",
-    weight: '175 lbs',
-    profileImage: '', // Empty for demo
+    fullName: '',
+    email: '',
+    dateOfBirth: '',
+    phone: '',
+    address: '',
+    emergencyContact: '',
+    medicalHistory: '',
+    allergies: [],
+    currentMedications: [],
+    bloodType: '',
+    height: '',
+    weight: '',
+    profileImage: '',
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [editedProfile, setEditedProfile] = useState<UserProfile>(profile);
+
+  // Load user profile data from API
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const user = await authAPI.getCurrentUser();
+        
+        // Transform API user data to profile format
+        const userProfile: UserProfile = {
+          fullName: user.full_name || '',
+          email: user.email || '',
+          dateOfBirth: user.date_of_birth || '',
+          phone: user.phone || '',
+          address: user.address || '',
+          emergencyContact: user.emergency_contact || '',
+          medicalHistory: user.medical_history || '',
+          allergies: user.allergies ? user.allergies.split(', ').filter(a => a.trim()) : [],
+          currentMedications: user.current_medications ? user.current_medications.split(', ').filter(m => m.trim()) : [],
+          bloodType: user.blood_type || '',
+          height: user.height || '',
+          weight: user.weight || '',
+          profileImage: '', // Profile images not implemented yet
+        };
+        
+        setProfile(userProfile);
+        setEditedProfile(userProfile);
+      } catch (err) {
+        console.error('Failed to load user profile:', err);
+        setError('Failed to load profile data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, []);
 
   const handleStartEdit = () => {
     setEditedProfile(profile);
     setIsEditing(true);
   };
 
-  const handleSaveProfile = () => {
-    // In demo mode, just update local state
-    setProfile(editedProfile);
-    setIsEditing(false);
-    showMessage('Profile updated successfully', 'success');
+  const handleSaveProfile = async () => {
+    try {
+      // Prepare data for API - convert arrays to proper format
+      const profileUpdateData = {
+        full_name: editedProfile.fullName,
+        date_of_birth: editedProfile.dateOfBirth,
+        phone: editedProfile.phone,
+        address: editedProfile.address,
+        emergency_contact: editedProfile.emergencyContact,
+        medical_history: editedProfile.medicalHistory,
+        allergies: editedProfile.allergies, // API expects array
+        current_medications: editedProfile.currentMedications, // API expects array
+        blood_type: editedProfile.bloodType,
+        height: editedProfile.height,
+        weight: editedProfile.weight,
+      };
+
+      // Call the real API to update profile
+      const updatedUser = await authAPI.updateProfile(profileUpdateData);
+      
+      // Transform the updated user data back to profile format
+      const updatedProfile: UserProfile = {
+        fullName: updatedUser.full_name || '',
+        email: updatedUser.email || '',
+        dateOfBirth: updatedUser.date_of_birth || '',
+        phone: updatedUser.phone || '',
+        address: updatedUser.address || '',
+        emergencyContact: updatedUser.emergency_contact || '',
+        medicalHistory: updatedUser.medical_history || '',
+        allergies: updatedUser.allergies ? updatedUser.allergies.split(', ').filter(a => a.trim()) : [],
+        currentMedications: updatedUser.current_medications ? updatedUser.current_medications.split(', ').filter(m => m.trim()) : [],
+        bloodType: updatedUser.blood_type || '',
+        height: updatedUser.height || '',
+        weight: updatedUser.weight || '',
+        profileImage: '',
+      };
+
+      setProfile(updatedProfile);
+      setEditedProfile(updatedProfile);
+      setIsEditing(false);
+      showMessage('Profile updated successfully!', 'success');
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+      showMessage('Failed to save profile changes. Please try again.', 'error');
+    }
   };
 
   const handleCancelEdit = () => {
@@ -114,14 +201,29 @@ const ProfilePage: React.FC = () => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
+  const handleLogout = () => {
+    logout();
+    showMessage('Logged out successfully', 'success');
+  };
+
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3 }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress size={60} />
+        </Box>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>
-      {/* Demo Mode Banner */}
-      <Paper sx={{ p: 2, mb: 3, bgcolor: 'info.light', borderRadius: 2 }}>
-        <Typography variant="body2" color="info.dark" textAlign="center">
-          🚀 <strong>Demo Mode:</strong> This is a demo profile. All changes are simulated and not saved to a database.
-        </Typography>
-      </Paper>
+      {/* Error Banner */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
       {/* Profile Header */}
       <Paper sx={{ p: 4, mb: 3, borderRadius: 3 }}>
@@ -474,6 +576,22 @@ const ProfilePage: React.FC = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Account Actions */}
+      <Paper sx={{ p: 3, mt: 3, borderRadius: 3, borderColor: 'error.light', border: '1px solid' }}>
+        <Typography variant="h6" gutterBottom color="error.main">
+          Account Actions
+        </Typography>
+        <Button
+          variant="outlined"
+          color="error"
+          startIcon={<LogoutIcon />}
+          onClick={handleLogout}
+          sx={{ minWidth: 120 }}
+        >
+          Log Out
+        </Button>
+      </Paper>
 
       {/* Photo Upload Dialog */}
       <Dialog open={photoDialogOpen} onClose={() => setPhotoDialogOpen(false)}>

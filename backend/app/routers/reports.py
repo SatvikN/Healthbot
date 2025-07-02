@@ -45,31 +45,7 @@ async def test_reports():
     return {"message": "Reports router is working"}
 
 
-@router.get("/test-data")
-async def get_test_reports():
-    """Test endpoint that returns mock reports data without auth."""
-    return [
-        {
-            "id": 1,
-            "title": "Headache Analysis Report",
-            "report_type": "symptom_analysis",
-            "status": "completed",
-            "generated_at": "2025-07-01T12:00:00Z",
-            "conversation_id": 1,
-            "symptom_count": 2,
-            "urgency_level": "medium"
-        },
-        {
-            "id": 2,
-            "title": "Weekly Health Summary",
-            "report_type": "health_summary",
-            "status": "completed",
-            "generated_at": "2025-06-30T18:00:00Z",
-            "conversation_id": None,
-            "symptom_count": 5,
-            "urgency_level": "low"
-        }
-    ]
+
 
 
 @router.get("/list", response_model=List[ReportResponse])
@@ -285,7 +261,7 @@ async def _generate_report_content_llm(
     # Format conversation for LLM
     conversation_text = ""
     for msg in messages:
-        role = "Patient" if msg.message_type.value == "user" else "Assistant"
+        role = "Patient" if msg.message_type == "user" else "Assistant"
         conversation_text += f"{role}: {msg.content}\n"
     
     # Create appropriate system prompt based on report type

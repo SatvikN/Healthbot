@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 from ..database import get_db
 from ..models.user import User
-from ..models.conversation import Conversation, Message, ConversationStatus, MessageType
+from ..models.conversation import Conversation, Message
 from ..routers.auth import get_current_user
 from ..services.llm_service import LLMService
 
@@ -66,7 +66,7 @@ async def start_new_conversation(
             user_id=current_user.id,
             title=f"Medical consultation - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             chief_complaint=request.chief_complaint,
-            status=ConversationStatus.ACTIVE
+            status="active"
         )
         
         db.add(conversation)
@@ -76,7 +76,7 @@ async def start_new_conversation(
         # Add initial user message
         user_message = Message(
             conversation_id=conversation.id,
-            message_type=MessageType.USER,
+            role="user",
             content=request.initial_message,
             contains_symptoms=True  # Assume initial message contains symptoms
         )
@@ -94,9 +94,8 @@ async def start_new_conversation(
         # Save AI message
         ai_message = Message(
             conversation_id=conversation.id,
-            message_type=MessageType.ASSISTANT,
-            content=welcome_response,
-            requires_followup=True
+            role="assistant",
+            content=welcome_response
         )
         
         db.add(ai_message)
@@ -154,7 +153,7 @@ async def send_message(
             detail="Conversation not found"
         )
     
-    if conversation.status != ConversationStatus.ACTIVE:
+    if conversation.status != "active":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot send message to inactive conversation"
@@ -164,7 +163,7 @@ async def send_message(
         # Save user message
         user_message = Message(
             conversation_id=conversation.id,
-            message_type=MessageType.USER,
+            role="user",
             content=request.content,
             contains_symptoms=_contains_symptoms(request.content)
         )
@@ -189,10 +188,8 @@ async def send_message(
         # Save AI message
         ai_message = Message(
             conversation_id=conversation.id,
-            message_type=MessageType.ASSISTANT,
-            content=ai_response,
-            requires_followup=requires_followup,
-            contains_medical_advice=contains_medical_advice
+            role="assistant",
+            content=ai_response
         )
         
         db.add(ai_message)
@@ -214,7 +211,7 @@ async def send_message(
                 "id": ai_message.id,
                 "content": ai_message.content,
                 "created_at": ai_message.created_at,
-                "requires_followup": ai_message.requires_followup
+                "requires_followup": requires_followup
             }
         }
             
@@ -250,10 +247,10 @@ async def get_user_conversations(
         result.append(ConversationResponse(
             id=conv.id,
             title=conv.title,
-            status=conv.status.value,
-            started_at=conv.started_at,
+            status=conv.status,
+            started_at=conv.created_at,
             chief_complaint=conv.chief_complaint,
-            urgency_level=conv.urgency_level,
+            urgency_level=None,
             message_count=message_count
         ))
     
@@ -287,24 +284,24 @@ async def get_conversation_details(
     for msg in messages:
         message_list.append({
             "id": msg.id,
-            "type": msg.message_type.value,
+            "message_type": msg.role,  # Use role field which contains user/assistant/system
             "content": msg.content,
             "created_at": msg.created_at,
             "processing_time": msg.processing_time,
             "contains_symptoms": msg.contains_symptoms,
-            "contains_medical_advice": msg.contains_medical_advice,
-            "requires_followup": msg.requires_followup
+            "contains_medical_advice": msg.contains_medical_info,
+            "requires_followup": _requires_followup(msg.content)
         })
     
     return {
         "conversation": {
             "id": conversation.id,
             "title": conversation.title,
-            "status": conversation.status.value,
-            "started_at": conversation.started_at,
+            "status": conversation.status,
+            "started_at": conversation.created_at,
             "updated_at": conversation.updated_at,
             "chief_complaint": conversation.chief_complaint,
-            "urgency_level": conversation.urgency_level
+            "urgency_level": None
         },
         "messages": message_list,
         "message_count": len(message_list)
@@ -330,7 +327,7 @@ async def complete_conversation(
             detail="Conversation not found"
         )
     
-    conversation.status = ConversationStatus.COMPLETED
+    conversation.status = "completed"
     conversation.completed_at = datetime.utcnow()
     
     db.commit()
@@ -432,7 +429,7 @@ def _get_conversation_history(db: Session, conversation_id: int) -> List[Dict]:
     history = []
     for msg in messages:
         history.append({
-            "type": msg.message_type.value,
+            "message_type": msg.role,  # Use role field which contains user/assistant/system
             "content": msg.content,
             "created_at": msg.created_at.isoformat()
         })
@@ -480,29 +477,7 @@ async def test_chat():
     return {"message": "Chat router is working"}
 
 
-@router.get("/test-data")
-async def get_test_conversations():
-    """Test endpoint that returns mock conversation data without auth."""
-    return [
-        {
-            "id": 1,
-            "title": "Headache Consultation",
-            "chief_complaint": "Persistent headache for 3 days",
-            "status": "completed",
-            "started_at": "2025-07-01T09:00:00Z",
-            "completed_at": "2025-07-01T09:30:00Z",
-            "messages": []
-        },
-        {
-            "id": 2,
-            "title": "General Fatigue",
-            "chief_complaint": "Feeling very tired lately",
-            "status": "active",
-            "started_at": "2025-07-01T14:00:00Z",
-            "completed_at": None,
-            "messages": []
-        }
-    ]
+
 
 
 async def _generate_welcome_response_llm(

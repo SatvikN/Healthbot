@@ -38,7 +38,20 @@ export interface User {
   email: string;
   full_name: string;
   date_of_birth?: string;
+  phone?: string;
+  address?: string;
+  emergency_contact?: string;
   medical_history?: string;
+  allergies?: string;
+  current_medications?: string;
+  blood_type?: string;
+  height?: string;
+  weight?: string;
+  age?: number;
+  gender?: string;
+  is_verified?: boolean;
+  created_at?: string;
+  last_login?: string;
 }
 
 export interface LoginResponse {
@@ -69,7 +82,7 @@ export interface Conversation {
   status: string;
   started_at: string;
   completed_at?: string;
-  messages: Message[];
+  messages?: Message[];
 }
 
 export interface SymptomRecord {
@@ -121,6 +134,11 @@ export const authAPI = {
     const response: AxiosResponse<User> = await api.get('/api/auth/me');
     return response.data;
   },
+
+  updateProfile: async (profileData: any): Promise<User> => {
+    const response: AxiosResponse<any> = await api.put('/api/auth/profile', profileData);
+    return response.data.user;
+  },
 };
 
 export const chatAPI = {
@@ -154,10 +172,7 @@ export const chatAPI = {
     await api.put(`/api/chat/conversation/${conversationId}/complete`);
   },
 
-  getTestConversations: async (): Promise<Conversation[]> => {
-    const response: AxiosResponse<Conversation[]> = await api.get('/api/chat/test-data');
-    return response.data;
-  },
+
 
   updateConversationTitle: async (conversationId: number, title: string): Promise<any> => {
     const response: AxiosResponse<any> = await api.put(`/api/chat/conversation/${conversationId}/title`, {
@@ -178,10 +193,7 @@ export const symptomsAPI = {
     return response.data;
   },
 
-  getTestSymptoms: async (): Promise<SymptomRecord[]> => {
-    const response: AxiosResponse<SymptomRecord[]> = await api.get('/api/symptoms/test-data');
-    return response.data;
-  },
+
 
   analyzeSymptoms: async (symptomIds: number[], additionalContext?: string): Promise<any> => {
     const response = await api.post('/api/symptoms/analyze', {
@@ -213,10 +225,7 @@ export const reportsAPI = {
     return response.data;
   },
 
-  getTestReports: async (): Promise<Report[]> => {
-    const response: AxiosResponse<Report[]> = await api.get('/api/reports/test-data');
-    return response.data;
-  },
+
 
   getReportDetail: async (reportId: number): Promise<any> => {
     const response = await api.get(`/api/reports/detail/${reportId}`);

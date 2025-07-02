@@ -17,38 +17,7 @@ async def test_symptoms():
     return {"message": "Symptoms router is working"}
 
 
-@router.get("/test-data")
-async def get_test_symptoms():
-    """Test endpoint that returns mock symptoms data without auth."""
-    return [
-        {
-            "id": 1,
-            "name": "Headache",
-            "description": "Persistent headache",
-            "severity": 6,
-            "category": "Neurological",
-            "onset_date": "2025-07-01T10:00:00Z",
-            "recorded_at": "2025-07-01T10:00:00Z"
-        },
-        {
-            "id": 2,
-            "name": "Fatigue",
-            "description": "General tiredness",
-            "severity": 4,
-            "category": "General",
-            "onset_date": "2025-07-01T08:00:00Z",
-            "recorded_at": "2025-07-01T08:00:00Z"
-        },
-        {
-            "id": 3,
-            "name": "Sore throat",
-            "description": "Throat irritation",
-            "severity": 3,
-            "category": "Respiratory",
-            "onset_date": "2025-06-30T15:00:00Z",
-            "recorded_at": "2025-06-30T15:00:00Z"
-        }
-    ]
+
 
 
 @router.get("/list")

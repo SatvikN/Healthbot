@@ -3,13 +3,65 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
+from sqlalchemy.orm import sessionmaker
 
 from .config import settings
 from .database import engine, Base
 from .routers import auth, chat, symptoms, reports, health
+from .models.user import User
+from .routers.auth import get_password_hash, get_user_by_email
 
 # Import all models to ensure they're registered with SQLAlchemy
 from .models import user, conversation, symptom, diagnosis, medical_report
+
+
+async def create_demo_account():
+    """Create demo account if it doesn't exist."""
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    
+    try:
+        demo_email = "demo@healthbot.com"
+        demo_password = "demo123"
+        demo_name = "Demo User"
+        
+        # Check if demo account already exists
+        existing_user = get_user_by_email(db, demo_email)
+        if existing_user:
+            print(f"📧 Demo account ({demo_email}) already exists")
+            return
+        
+        # Create demo account with comprehensive profile data
+        hashed_password = get_password_hash(demo_password)
+        demo_user = User(
+            email=demo_email,
+            hashed_password=hashed_password,
+            full_name=demo_name,
+            date_of_birth="2000-01-01",
+            phone="+1 (123) 456-7890",
+            address="123 Main Street, San Francisco, CA 94102",
+            emergency_contact="Emergency Contact - +1 (0987) 654-4321",
+            medical_history="Hypertension (2018), Appendectomy (2015), Seasonal allergies",
+            allergies="Penicillin, Shellfish, Pollen",
+            current_medications="Vitamin B3, Multivitamins, Fish Oil",
+            blood_type="O+",
+            height="6'2\"",
+            weight="175 lbs",
+            age=25,
+            gender="Male",
+            is_active=True,
+            is_verified=True
+        )
+        
+        db.add(demo_user)
+        db.commit()
+        print(f"✅ Demo account created: {demo_email} / {demo_password}")
+        
+    except Exception as e:
+        print(f"❌ Failed to create demo account: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 @asynccontextmanager
@@ -21,6 +73,9 @@ async def lifespan(app: FastAPI):
     # Create database tables
     Base.metadata.create_all(bind=engine)
     print("📊 Database tables created/verified")
+    
+    # Create demo account
+    await create_demo_account()
     
     # Test LLM connection - commented out for now
     # from .services.llm_service import llm_service

@@ -11,13 +11,19 @@ class User(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     
     # User profile
     full_name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
     gender = Column(String(20), nullable=True)
+    date_of_birth = Column(String, nullable=True)  # Store as ISO date string
+    phone = Column(String(50), nullable=True)
+    address = Column(Text, nullable=True)
+    blood_type = Column(String(10), nullable=True)
+    height = Column(String(20), nullable=True)  # e.g., "6'2\"" or "188cm"
+    weight = Column(String(20), nullable=True)  # e.g., "175 lbs" or "80kg"
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     

@@ -73,7 +73,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, 
 
   const renderMessage = (message: Message, index: number) => {
     const isUser = message.message_type === 'user';
-    const prevMessage = index > 0 ? conversation.messages[index - 1] : null;
+    const prevMessage = index > 0 && conversation.messages ? conversation.messages[index - 1] : null;
     const showDateDivider = !prevMessage || 
       formatDate(message.created_at) !== formatDate(prevMessage.created_at);
 
@@ -230,7 +230,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, 
           maxHeight: 'calc(100vh - 400px)',
         }}
       >
-        {conversation.messages.length === 0 ? (
+        {!conversation.messages || conversation.messages.length === 0 ? (
           <Box
             display="flex"
             flexDirection="column"
@@ -250,7 +250,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, 
           </Box>
         ) : (
           <>
-            {conversation.messages.map(renderMessage)}
+            {conversation.messages?.map(renderMessage)}
             
             {/* Loading indicator */}
             {isLoading && (
@@ -290,7 +290,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, 
 
             {/* Quick Reply Suggestions */}
             {!isLoading && (() => {
-              const lastMessage = conversation.messages[conversation.messages.length - 1];
+              const lastMessage = conversation.messages && conversation.messages.length > 0 
+                ? conversation.messages[conversation.messages.length - 1] 
+                : undefined;
               const quickReplies = getQuickReplySuggestions(lastMessage);
               
               return quickReplies.length > 0 && lastMessage?.message_type === 'assistant' && onQuickReply ? (
