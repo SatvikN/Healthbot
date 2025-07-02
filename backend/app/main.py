@@ -22,14 +22,14 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     print("📊 Database tables created/verified")
     
-    # Test LLM connection
-    from .services.llm_service import llm_service
-    async with llm_service:
-        is_available = await llm_service.is_model_available()
-        if is_available:
-            print(f"🤖 LLM Model '{settings.ollama_model}' is ready")
-        else:
-            print(f"⚠️ LLM Model '{settings.ollama_model}' not found. Will attempt to pull on first use.")
+    # Test LLM connection - commented out for now
+    # from .services.llm_service import llm_service
+    # async with llm_service:
+    #     is_available = await llm_service.is_model_available()
+    #     if is_available:
+    #         print(f"🤖 LLM Model '{settings.ollama_model}' is ready")
+    #     else:
+    #         print(f"⚠️ LLM Model '{settings.ollama_model}' not found. Will attempt to pull on first use.")
     
     print("✅ HealthBot is ready to help!")
     

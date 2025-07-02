@@ -71,7 +71,7 @@ class Message(Base):
     confidence_score = Column(Integer, nullable=True)  # 0-100
     
     # Additional data (JSON for flexibility)
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

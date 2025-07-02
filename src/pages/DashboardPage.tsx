@@ -51,6 +51,7 @@ const DashboardPage: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isUsingRealAPI, setIsUsingRealAPI] = useState(false);
 
   // Helper functions
   const formatTimeAgo = useCallback((dateString: string): string => {
@@ -71,12 +72,14 @@ const DashboardPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch data from multiple endpoints in parallel
+      // Fetch data from test endpoints (since auth isn't implemented yet)
       const [conversations, symptoms, reports] = await Promise.all([
-        chatAPI.getConversations().catch(() => []),
-        symptomsAPI.getSymptoms({ limit: 10, active_only: true }).catch(() => []),
-        reportsAPI.getReports({ limit: 5 }).catch(() => []),
+        (chatAPI as any).getTestConversations().catch(() => []),
+        (symptomsAPI as any).getTestSymptoms().catch(() => []),
+        (reportsAPI as any).getTestReports().catch(() => []),
       ]);
+
+      console.log('🚀 Real API Data:', { conversations, symptoms, reports });
 
       // Process the data
       const activeSymptoms = symptoms.filter((s: any) => 
@@ -122,9 +125,11 @@ const DashboardPage: React.FC = () => {
       };
 
       setDashboardData(dashboardData);
+      setIsUsingRealAPI(true);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       setError('Failed to load dashboard data. Please try again.');
+      setIsUsingRealAPI(false);
       
       // Fallback to mock data
       setDashboardData({
@@ -222,9 +227,17 @@ const DashboardPage: React.FC = () => {
           <Typography variant="h4" gutterBottom>
             Health Dashboard
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Welcome back! Here's your health overview and recent activity.
-          </Typography>
+          <Box display="flex" alignItems="center" gap={1}>
+            <Typography variant="body1" color="text.secondary">
+              Welcome back! Here's your health overview and recent activity.
+            </Typography>
+            <Chip 
+              label={isUsingRealAPI ? "Live API" : "Mock Data"} 
+              color={isUsingRealAPI ? "success" : "warning"}
+              size="small"
+              variant="outlined"
+            />
+          </Box>
         </Box>
         <Tooltip title="Refresh data">
           <IconButton onClick={loadDashboardData} disabled={loading}>

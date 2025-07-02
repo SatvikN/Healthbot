@@ -9,7 +9,7 @@ from ..database import get_db
 from ..models.user import User
 from ..models.conversation import Conversation, Message, ConversationStatus, MessageType
 from ..routers.auth import get_current_user
-from ..services.llm_service import llm_service
+# from ..services.llm_service import llm_service
 
 router = APIRouter()
 
@@ -497,4 +497,35 @@ def _requires_followup(content: str) -> bool:
     ]
     
     content_lower = content.lower()
-    return any(indicator in content_lower for indicator in followup_indicators) 
+    return any(indicator in content_lower for indicator in followup_indicators)
+
+
+@router.get("/test")
+async def test_chat():
+    """Test endpoint for chat."""
+    return {"message": "Chat router is working"}
+
+
+@router.get("/test-data")
+async def get_test_conversations():
+    """Test endpoint that returns mock conversation data without auth."""
+    return [
+        {
+            "id": 1,
+            "title": "Headache Consultation",
+            "chief_complaint": "Persistent headache for 3 days",
+            "status": "completed",
+            "started_at": "2025-07-01T09:00:00Z",
+            "completed_at": "2025-07-01T09:30:00Z",
+            "messages": []
+        },
+        {
+            "id": 2,
+            "title": "General Fatigue",
+            "chief_complaint": "Feeling very tired lately",
+            "status": "active",
+            "started_at": "2025-07-01T14:00:00Z",
+            "completed_at": None,
+            "messages": []
+        }
+    ] 

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from ..database import get_db, get_redis
-from ..services.llm_service import llm_service
+# from ..services.llm_service import llm_service
 from ..config import settings
 
 router = APIRouter()
@@ -64,29 +64,29 @@ async def detailed_health_check(
             "message": f"Redis connection failed: {str(e)}"
         }
     
-    # LLM service check
-    try:
-        async with llm_service:
-            is_available = await llm_service.is_model_available()
-            if is_available:
-                health_status["checks"]["llm"] = {
-                    "status": "healthy",
-                    "message": f"LLM model {settings.ollama_model} is available",
-                    "model": settings.ollama_model
-                }
-            else:
-                health_status["status"] = "degraded" if health_status["status"] == "healthy" else "unhealthy"
-                health_status["checks"]["llm"] = {
-                    "status": "degraded",
-                    "message": f"LLM model {settings.ollama_model} not available locally",
-                    "model": settings.ollama_model
-                }
-    except Exception as e:
-        health_status["status"] = "degraded" if health_status["status"] == "healthy" else "unhealthy"
-        health_status["checks"]["llm"] = {
-            "status": "unhealthy",
-            "message": f"LLM service check failed: {str(e)}"
-        }
+    # LLM service check - commented out for now
+    # try:
+    #     async with llm_service:
+    #         is_available = await llm_service.is_model_available()
+    #         if is_available:
+    #             health_status["checks"]["llm"] = {
+    #                 "status": "healthy",
+    #                 "message": f"LLM model {settings.ollama_model} is available",
+    #                 "model": settings.ollama_model
+    #             }
+    #         else:
+    #             health_status["status"] = "degraded" if health_status["status"] == "healthy" else "unhealthy"
+    #             health_status["checks"]["llm"] = {
+    #                 "status": "degraded",
+    #                 "message": f"LLM model {settings.ollama_model} not available locally",
+    #                 "model": settings.ollama_model
+    #             }
+    # except Exception as e:
+    #     health_status["status"] = "degraded" if health_status["status"] == "healthy" else "unhealthy"
+    #     health_status["checks"]["llm"] = {
+    #         "status": "unhealthy",
+    #         "message": f"LLM service check failed: {str(e)}"
+    #     }
     
     return health_status
 

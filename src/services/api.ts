@@ -106,33 +106,33 @@ export const authAPI = {
     formData.append('username', email);
     formData.append('password', password);
     
-    const response: AxiosResponse<LoginResponse> = await api.post('/auth/login', formData, {
+    const response: AxiosResponse<LoginResponse> = await api.post('/api/auth/token', formData, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     return response.data;
   },
 
   register: async (userData: RegisterData): Promise<User> => {
-    const response: AxiosResponse<User> = await api.post('/auth/register', userData);
+    const response: AxiosResponse<User> = await api.post('/api/auth/register', userData);
     return response.data;
   },
 
   getCurrentUser: async (): Promise<User> => {
-    const response: AxiosResponse<User> = await api.get('/auth/me');
+    const response: AxiosResponse<User> = await api.get('/api/auth/me');
     return response.data;
   },
 };
 
 export const chatAPI = {
   startConversation: async (chiefComplaint: string): Promise<Conversation> => {
-    const response: AxiosResponse<Conversation> = await api.post('/chat/start', {
+    const response: AxiosResponse<Conversation> = await api.post('/api/chat/start', {
       chief_complaint: chiefComplaint,
     });
     return response.data;
   },
 
   sendMessage: async (conversationId: number, message: string): Promise<Message> => {
-    const response: AxiosResponse<Message> = await api.post('/chat/send-message', {
+    const response: AxiosResponse<Message> = await api.post('/api/chat/send-message', {
       conversation_id: conversationId,
       message,
     });
@@ -140,33 +140,43 @@ export const chatAPI = {
   },
 
   getConversations: async (): Promise<Conversation[]> => {
-    const response: AxiosResponse<Conversation[]> = await api.get('/chat/conversations');
+    const response: AxiosResponse<Conversation[]> = await api.get('/api/chat/conversations');
     return response.data;
   },
 
   getConversation: async (conversationId: number): Promise<Conversation> => {
-    const response: AxiosResponse<Conversation> = await api.get(`/chat/conversation/${conversationId}`);
+    const response: AxiosResponse<Conversation> = await api.get(`/api/chat/conversation/${conversationId}`);
     return response.data;
   },
 
   completeConversation: async (conversationId: number): Promise<void> => {
-    await api.put(`/chat/conversation/${conversationId}/complete`);
+    await api.put(`/api/chat/conversation/${conversationId}/complete`);
+  },
+
+  getTestConversations: async (): Promise<Conversation[]> => {
+    const response: AxiosResponse<Conversation[]> = await api.get('/api/chat/test-data');
+    return response.data;
   },
 };
 
 export const symptomsAPI = {
   recordSymptom: async (symptomData: any): Promise<SymptomRecord> => {
-    const response: AxiosResponse<SymptomRecord> = await api.post('/symptoms/record', symptomData);
+    const response: AxiosResponse<SymptomRecord> = await api.post('/api/symptoms/record', symptomData);
     return response.data;
   },
 
   getSymptoms: async (params?: any): Promise<SymptomRecord[]> => {
-    const response: AxiosResponse<SymptomRecord[]> = await api.get('/symptoms/list', { params });
+    const response: AxiosResponse<SymptomRecord[]> = await api.get('/api/symptoms/list', { params });
+    return response.data;
+  },
+
+  getTestSymptoms: async (): Promise<SymptomRecord[]> => {
+    const response: AxiosResponse<SymptomRecord[]> = await api.get('/api/symptoms/test-data');
     return response.data;
   },
 
   analyzeSymptoms: async (symptomIds: number[], additionalContext?: string): Promise<any> => {
-    const response = await api.post('/symptoms/analyze', {
+    const response = await api.post('/api/symptoms/analyze', {
       symptom_ids: symptomIds,
       additional_context: additionalContext,
     });
@@ -174,41 +184,46 @@ export const symptomsAPI = {
   },
 
   getCategories: async (): Promise<string[]> => {
-    const response: AxiosResponse<string[]> = await api.get('/symptoms/categories');
+    const response: AxiosResponse<string[]> = await api.get('/api/symptoms/categories');
     return response.data;
   },
 
   getStats: async (): Promise<any> => {
-    const response = await api.get('/symptoms/stats');
+    const response = await api.get('/api/symptoms/stats');
     return response.data;
   },
 };
 
 export const reportsAPI = {
   generateReport: async (reportData: any): Promise<Report> => {
-    const response: AxiosResponse<Report> = await api.post('/reports/generate', reportData);
+    const response: AxiosResponse<Report> = await api.post('/api/reports/generate', reportData);
     return response.data;
   },
 
   getReports: async (params?: any): Promise<Report[]> => {
-    const response: AxiosResponse<Report[]> = await api.get('/reports/list', { params });
+    const response: AxiosResponse<Report[]> = await api.get('/api/reports/list', { params });
+    return response.data;
+  },
+
+  getTestReports: async (): Promise<Report[]> => {
+    const response: AxiosResponse<Report[]> = await api.get('/api/reports/test-data');
     return response.data;
   },
 
   getReportDetail: async (reportId: number): Promise<any> => {
-    const response = await api.get(`/reports/detail/${reportId}`);
+    const response = await api.get(`/api/reports/detail/${reportId}`);
     return response.data;
   },
 
   downloadReport: async (reportId: number): Promise<Blob> => {
-    const response = await api.get(`/reports/download/${reportId}`, {
+    const response = await api.get(`/api/reports/download/${reportId}`, {
       responseType: 'blob',
     });
     return response.data;
   },
 
   emailReport: async (reportId: number, email: string, message?: string): Promise<void> => {
-    await api.post('/reports/email', {
+    await api.post('/api/reports/email', {
       report_id: reportId,
       healthcare_provider_email: email,
       message,
@@ -218,7 +233,7 @@ export const reportsAPI = {
 
 export const healthAPI = {
   checkHealth: async (): Promise<any> => {
-    const response = await api.get('/health');
+    const response = await api.get('/api/health/');
     return response.data;
   },
 };
