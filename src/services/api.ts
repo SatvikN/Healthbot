@@ -124,17 +124,18 @@ export const authAPI = {
 };
 
 export const chatAPI = {
-  startConversation: async (chiefComplaint: string): Promise<Conversation> => {
-    const response: AxiosResponse<Conversation> = await api.post('/api/chat/start', {
+  startConversation: async (chiefComplaint: string): Promise<any> => {
+    const response: AxiosResponse<any> = await api.post('/api/chat/start', {
+      initial_message: chiefComplaint,
       chief_complaint: chiefComplaint,
     });
     return response.data;
   },
 
-  sendMessage: async (conversationId: number, message: string): Promise<Message> => {
-    const response: AxiosResponse<Message> = await api.post('/api/chat/send-message', {
+  sendMessage: async (conversationId: number, message: string): Promise<any> => {
+    const response: AxiosResponse<any> = await api.post('/api/chat/send-message', {
       conversation_id: conversationId,
-      message,
+      content: message,
     });
     return response.data;
   },

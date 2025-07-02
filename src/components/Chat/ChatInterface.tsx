@@ -6,12 +6,14 @@ import {
   Avatar,
   CircularProgress,
   Chip,
-  Divider,
+  Button,
+  Fade,
 } from '@mui/material';
 import {
   Person as PersonIcon,
   SmartToy as BotIcon,
   MedicalServices as MedicalIcon,
+  QuestionAnswer as QuestionIcon,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import { format } from 'date-fns';
@@ -21,9 +23,39 @@ import { Conversation, Message } from '../../services/api';
 interface ChatInterfaceProps {
   conversation: Conversation;
   isLoading?: boolean;
+  onQuickReply?: (message: string) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading }) => {
+// Quick reply suggestions based on conversation context
+const getQuickReplySuggestions = (lastMessage?: Message): string[] => {
+  if (!lastMessage || lastMessage.message_type === 'user') return [];
+  
+  const content = lastMessage.content.toLowerCase();
+  
+  if (content.includes('when did') || content.includes('timeline')) {
+    return ['Started yesterday', 'Started a few days ago', 'Started last week', 'About a month ago'];
+  }
+  
+  if (content.includes('scale of 1-10') || content.includes('severity')) {
+    return ['Mild (2-3)', 'Moderate (4-6)', 'Severe (7-8)', 'Very severe (9-10)'];
+  }
+  
+  if (content.includes('better or worse') || content.includes('triggers')) {
+    return ['Rest helps', 'Movement helps', 'Medication helps', 'Gets worse with activity'];
+  }
+  
+  if (content.includes('other symptoms') || content.includes('additional')) {
+    return ['No other symptoms', 'Yes, also have fever', 'Yes, also nauseous', 'Yes, feeling tired'];
+  }
+  
+  if (content.includes('medications') || content.includes('treatment')) {
+    return ['Taking ibuprofen', 'Taking acetaminophen', 'No medications', 'Prescription medications'];
+  }
+  
+  return ['Yes', 'No', 'Sometimes', 'Not sure'];
+};
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading, onQuickReply }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -222,48 +254,85 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversation, isLoading }
             
             {/* Loading indicator */}
             {isLoading && (
-              <Box display="flex" justifyContent="flex-start" mb={1} mx={1}>
-                <Box display="flex" alignItems="flex-start" gap={1}>
-                  <Avatar
-                    sx={{
-                      width: 32,
-                      height: 32,
-                      bgcolor: 'secondary.main',
-                    }}
-                  >
-                    <BotIcon fontSize="small" />
-                  </Avatar>
-                  <Paper
-                    sx={{
-                      p: 2,
-                      bgcolor: 'background.paper',
-                      borderRadius: 2,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                    }}
-                  >
-                    <CircularProgress size={16} />
-                    <Typography variant="body2" color="text.secondary">
-                      Analyzing your message...
-                    </Typography>
-                  </Paper>
+              <Fade in={true}>
+                <Box display="flex" justifyContent="flex-start" mb={1} mx={1}>
+                  <Box display="flex" alignItems="flex-start" gap={1}>
+                    <Avatar
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        bgcolor: 'secondary.main',
+                      }}
+                    >
+                      <BotIcon fontSize="small" />
+                    </Avatar>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        bgcolor: 'background.paper',
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <CircularProgress size={16} />
+                      <Typography variant="body2" color="text.secondary">
+                        Analyzing your message...
+                      </Typography>
+                    </Paper>
+                  </Box>
                 </Box>
-              </Box>
+              </Fade>
             )}
+
+            {/* Quick Reply Suggestions */}
+            {!isLoading && (() => {
+              const lastMessage = conversation.messages[conversation.messages.length - 1];
+              const quickReplies = getQuickReplySuggestions(lastMessage);
+              
+              return quickReplies.length > 0 && lastMessage?.message_type === 'assistant' && onQuickReply ? (
+                <Fade in={true} timeout={500}>
+                  <Box mx={1} mb={2}>
+                    <Box display="flex" alignItems="center" gap={1} mb={1}>
+                      <QuestionIcon fontSize="small" color="action" />
+                      <Typography variant="caption" color="text.secondary">
+                        Quick replies:
+                      </Typography>
+                    </Box>
+                    <Box display="flex" flexWrap="wrap" gap={1}>
+                      {quickReplies.map((reply, idx) => (
+                        <Button
+                          key={idx}
+                          variant="outlined"
+                          size="small"
+                          onClick={() => onQuickReply(reply)}
+                          sx={{
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            minHeight: 32,
+                            fontSize: '0.875rem',
+                            '&:hover': {
+                              bgcolor: 'primary.light',
+                              borderColor: 'primary.main',
+                            },
+                          }}
+                        >
+                          {reply}
+                        </Button>
+                      ))}
+                    </Box>
+                  </Box>
+                </Fade>
+              ) : null;
+            })()}
           </>
         )}
 
         {/* Scroll anchor */}
         <div ref={messagesEndRef} />
-      </Box>
-
-      {/* Disclaimer */}
-      <Divider />
-      <Box p={1} bgcolor="warning.light">
-        <Typography variant="caption" color="text.secondary" textAlign="center" display="block">
-          ⚠️ This is an AI assistant for informational purposes only. Always consult with healthcare professionals for medical advice.
-        </Typography>
       </Box>
     </Paper>
   );

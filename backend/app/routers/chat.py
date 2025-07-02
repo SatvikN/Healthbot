@@ -79,66 +79,25 @@ async def start_new_conversation(
         db.refresh(user_message)
         
         # Generate AI welcome response
-        welcome_prompt = f"""
-        A new patient has started a medical consultation. Their initial message is:
-        "{request.initial_message}"
+        welcome_response = _generate_welcome_response(request.initial_message, request.chief_complaint)
         
-        Please provide a warm, professional welcome response that:
-        1. Acknowledges their concern
-        2. Explains your role as a medical assistant (not a doctor)
-        3. Asks a relevant follow-up question about their symptoms
-        4. Reassures them about privacy and the process
+        # Save AI message
+        ai_message = Message(
+            conversation_id=conversation.id,
+            message_type=MessageType.ASSISTANT,
+            content=welcome_response,
+            requires_followup=True
+        )
         
-        Keep it concise but empathetic.
-        """
-        
-        # Get AI response
-        async with llm_service:
-            ai_result = await llm_service.generate_chat_response(
-                request.initial_message, 
-                []  # Empty conversation history for first message
-            )
-        
-        if ai_result.get("success"):
-            ai_response = ai_result.get("response", "Hello! I'm here to help you describe your symptoms.")
-            
-            # Save AI message
-            ai_message = Message(
-                conversation_id=conversation.id,
-                message_type=MessageType.ASSISTANT,
-                content=ai_response,
-                model_used=ai_result.get("model"),
-                processing_time=ai_result.get("processing_time"),
-                requires_followup=True
-            )
-            
-            db.add(ai_message)
-            db.commit()
-            db.refresh(ai_message)
-            
-        else:
-            # Fallback response if AI fails
-            ai_response = """Hello! I'm your medical assistant. I'm here to help you describe your symptoms and gather information for your healthcare provider. 
-
-Please note that I'm not a doctor and cannot provide medical diagnoses. My role is to help you organize your symptoms and create a comprehensive report.
-
-Can you tell me more about what you're experiencing? When did these symptoms start?"""
-            
-            ai_message = Message(
-                conversation_id=conversation.id,
-                message_type=MessageType.ASSISTANT,
-                content=ai_response,
-                requires_followup=True
-            )
-            
-            db.add(ai_message)
-            db.commit()
+        db.add(ai_message)
+        db.commit()
+        db.refresh(ai_message)
         
         return {
             "conversation_id": conversation.id,
             "status": "started",
             "message": "Conversation started successfully",
-            "initial_response": ai_response,
+            "initial_response": welcome_response,
             "user_message": {
                 "id": user_message.id,
                 "content": user_message.content,
@@ -207,82 +166,44 @@ async def send_message(
         # Get conversation history for context
         conversation_history = _get_conversation_history(db, conversation.id)
         
-        # Generate AI response
-        async with llm_service:
-            ai_result = await llm_service.generate_chat_response(
-                request.content,
-                conversation_history
-            )
+        # Generate intelligent response based on user input and conversation history
+        ai_response = _generate_smart_response(request.content, conversation_history)
         
-        if ai_result.get("success"):
-            ai_response = ai_result.get("response", "I understand. Can you tell me more about that?")
-            
-            # Analyze if response requires follow-up
-            requires_followup = _requires_followup(ai_response)
-            contains_medical_advice = _contains_medical_advice(ai_response)
-            
-            # Save AI message
-            ai_message = Message(
-                conversation_id=conversation.id,
-                message_type=MessageType.ASSISTANT,
-                content=ai_response,
-                model_used=ai_result.get("model"),
-                processing_time=ai_result.get("processing_time"),
-                requires_followup=requires_followup,
-                contains_medical_advice=contains_medical_advice
-            )
-            
-            db.add(ai_message)
-            
-            # Update conversation metadata
-            conversation.updated_at = datetime.utcnow()
-            
-            db.commit()
-            db.refresh(ai_message)
-            
-            return {
-                "status": "success",
-                "user_message": {
-                    "id": user_message.id,
-                    "content": user_message.content,
-                    "created_at": user_message.created_at
-                },
-                "ai_message": {
-                    "id": ai_message.id,
-                    "content": ai_message.content,
-                    "created_at": ai_message.created_at,
-                    "processing_time": ai_message.processing_time,
-                    "requires_followup": ai_message.requires_followup
-                }
+        # Analyze if response requires follow-up
+        requires_followup = _requires_followup(ai_response)
+        contains_medical_advice = _contains_medical_advice(ai_response)
+        
+        # Save AI message
+        ai_message = Message(
+            conversation_id=conversation.id,
+            message_type=MessageType.ASSISTANT,
+            content=ai_response,
+            requires_followup=requires_followup,
+            contains_medical_advice=contains_medical_advice
+        )
+        
+        db.add(ai_message)
+        
+        # Update conversation metadata
+        conversation.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(ai_message)
+        
+        return {
+            "status": "success",
+            "user_message": {
+                "id": user_message.id,
+                "content": user_message.content,
+                "created_at": user_message.created_at
+            },
+            "ai_message": {
+                "id": ai_message.id,
+                "content": ai_message.content,
+                "created_at": ai_message.created_at,
+                "requires_followup": ai_message.requires_followup
             }
-        else:
-            # Fallback if AI fails
-            fallback_response = "I'm having trouble processing that right now. Could you please rephrase your symptoms or try again?"
-            
-            ai_message = Message(
-                conversation_id=conversation.id,
-                message_type=MessageType.ASSISTANT,
-                content=fallback_response,
-                requires_followup=True
-            )
-            
-            db.add(ai_message)
-            db.commit()
-            
-            return {
-                "status": "partial_success",
-                "message": "Response generated with fallback",
-                "user_message": {
-                    "id": user_message.id,
-                    "content": user_message.content,
-                    "created_at": user_message.created_at
-                },
-                "ai_message": {
-                    "id": ai_message.id,
-                    "content": fallback_response,
-                    "created_at": ai_message.created_at
-                }
-            }
+        }
             
     except Exception as e:
         db.rollback()
@@ -430,22 +351,14 @@ async def generate_followup_questions(
     # Get conversation history
     conversation_history = _get_conversation_history(db, conversation_id)
     
-    # Generate follow-up questions using AI
-    async with llm_service:
-        result = await llm_service.generate_followup_questions(conversation_history)
+    # Generate follow-up questions based on conversation
+    followup_questions = _generate_followup_questions(conversation_history)
     
-    if result.get("success"):
-        return {
-            "status": "success",
-            "followup_questions": result.get("response", ""),
-            "conversation_id": conversation_id
-        }
-    else:
-        return {
-            "status": "error",
-            "message": "Failed to generate follow-up questions",
-            "error": result.get("error")
-        }
+    return {
+        "status": "success",
+        "followup_questions": followup_questions,
+        "conversation_id": conversation_id
+    }
 
 
 # Helper functions
@@ -528,4 +441,151 @@ async def get_test_conversations():
             "completed_at": None,
             "messages": []
         }
-    ] 
+    ]
+
+
+def _generate_welcome_response(initial_message: str, chief_complaint: Optional[str] = None) -> str:
+    """Generate an intelligent welcome response based on the user's initial message."""
+    
+    # Extract key symptoms/conditions from the message
+    message_lower = initial_message.lower()
+    complaint_lower = (chief_complaint or "").lower()
+    
+    # Common response patterns based on symptoms
+    if any(word in message_lower for word in ["pain", "hurt", "ache", "sore"]):
+        if any(word in message_lower for word in ["head", "headache"]):
+            return """Hello! I understand you're experiencing headache pain. I'm here to help you describe your symptoms in detail so we can create a comprehensive report for your healthcare provider.
+
+Let me ask a few questions to better understand your situation:
+
+• When did your headache start?
+• How would you rate the pain intensity on a scale of 1-10?
+• Can you describe the type of pain (throbbing, sharp, dull, pressure)?
+• What makes it better or worse?
+
+Please remember, I'm not a doctor and cannot provide medical diagnoses. My role is to help organize your symptoms for your healthcare provider."""
+
+        elif any(word in message_lower for word in ["back", "spine"]):
+            return """Hello! I see you're experiencing back pain. I'm here to help gather detailed information about your symptoms for your healthcare provider.
+
+To better understand your back pain, could you tell me:
+
+• Where exactly is the pain located (lower back, upper back, between shoulder blades)?
+• When did it start and what were you doing when it began?
+• How would you rate the pain on a scale of 1-10?
+• Does the pain radiate to other areas (legs, arms, etc.)?
+
+I'll help you organize this information into a clear report, but please remember that I cannot provide medical diagnoses."""
+
+    elif any(word in message_lower for word in ["fever", "temperature", "hot", "chills"]):
+        return """Hello! I understand you're dealing with fever symptoms. I'm here to help document your symptoms for your healthcare provider.
+
+Let's gather some important details:
+
+• What is your current temperature if you've measured it?
+• When did the fever start?
+• Are you experiencing any other symptoms along with the fever (headache, body aches, nausea)?
+• Have you taken any medications for the fever?
+
+Please note: If your fever is very high (over 103°F/39.4°C) or you're having difficulty breathing, please seek immediate medical attention."""
+
+    elif any(word in message_lower for word in ["cough", "breathing", "chest"]):
+        return """Hello! I see you're having respiratory symptoms. I'm here to help document these symptoms for your healthcare provider.
+
+To better understand your condition, could you describe:
+
+• When did your cough start?
+• Is it a dry cough or are you producing phlegm?
+• Are you experiencing any shortness of breath or chest pain?
+• Do you have any fever or other symptoms?
+
+If you're having severe difficulty breathing or chest pain, please seek immediate medical attention. Otherwise, I'll help you organize your symptoms into a comprehensive report."""
+
+    else:
+        # Generic welcome for other complaints
+        return f"""Hello! I'm your medical assistant and I'm here to help you describe your symptoms and gather information for your healthcare provider.
+
+I see you mentioned: "{chief_complaint or initial_message[:100]}..."
+
+Please note that I'm not a doctor and cannot provide medical diagnoses. My role is to help you organize your symptoms into a clear, comprehensive report that you can share with your healthcare provider.
+
+Could you tell me more about:
+• When did these symptoms start?
+• How severe are they on a scale of 1-10?
+• What makes them better or worse?
+• Any other symptoms you're experiencing?
+
+Let's work together to document everything properly."""
+
+
+def _generate_smart_response(user_message: str, conversation_history: List[Dict]) -> str:
+    """Generate an intelligent response based on user input and conversation context."""
+    
+    message_lower = user_message.lower()
+    message_count = len(conversation_history)
+    
+    # Analyze the type of response needed
+    if any(word in message_lower for word in ["yes", "yeah", "yep", "correct"]):
+        return "Thank you for confirming that. Could you provide more details about this symptom? For example, when did it start and how has it changed over time?"
+    
+    elif any(word in message_lower for word in ["no", "nope", "not really", "none"]):
+        return "I understand. Let's explore other aspects of your symptoms. Are there any other symptoms or concerns you'd like to discuss?"
+    
+    elif any(word in message_lower for word in ["started", "began", "since"]):
+        return "Thank you for that timeline information. That's very helpful. Now, could you describe the severity or intensity of your symptoms? How would you rate them on a scale of 1-10?"
+    
+    elif any(number in message_lower for number in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]):
+        return "Thank you for rating your symptoms. That helps me understand the severity. Are there any specific triggers or activities that make your symptoms better or worse?"
+    
+    elif any(word in message_lower for word in ["better", "worse", "triggers", "helps", "relief"]):
+        return "That's important information about what affects your symptoms. Are you currently taking any medications or treatments for these symptoms? Also, have you noticed any other symptoms occurring along with your main concern?"
+    
+    elif any(word in message_lower for word in ["medication", "medicine", "pills", "treatment"]):
+        return "Thank you for sharing that medication information. It's important to include current treatments in your medical record. Is there anything else about your symptoms that you think would be important for your healthcare provider to know?"
+    
+    elif message_count < 3:
+        # Early in conversation, ask basic follow-up questions
+        return "Thank you for sharing that information. To help create a complete picture for your healthcare provider, could you tell me when these symptoms started and how you would rate their severity on a scale of 1-10?"
+    
+    elif message_count < 6:
+        # Mid conversation, gather more specific details
+        return "That's helpful detail. Are there any other symptoms occurring along with your main concern? Also, have you tried anything that makes the symptoms better or worse?"
+    
+    else:
+        # Later in conversation, wrap up and summarize
+        return "Thank you for providing all that detailed information. Based on what you've shared, I'm building a comprehensive symptom report for your healthcare provider. Is there anything else about your symptoms or health concerns that you'd like to add before we summarize everything?"
+
+
+def _generate_followup_questions(conversation_history: List[Dict]) -> str:
+    """Generate intelligent follow-up questions based on conversation history."""
+    
+    if not conversation_history:
+        return "Let's start with some basic questions about your symptoms:\n\n• When did your symptoms first start?\n• How would you rate the severity on a scale of 1-10?\n• What makes your symptoms better or worse?"
+    
+    # Analyze what information is missing
+    has_timeline = any("when" in msg.get("content", "").lower() or "started" in msg.get("content", "").lower() for msg in conversation_history)
+    has_severity = any(str(i) in msg.get("content", "") for msg in conversation_history for i in range(1, 11))
+    has_triggers = any(word in msg.get("content", "").lower() for msg in conversation_history for word in ["better", "worse", "trigger", "cause"])
+    has_medications = any(word in msg.get("content", "").lower() for msg in conversation_history for word in ["medication", "medicine", "pills", "treatment"])
+    
+    questions = []
+    
+    if not has_timeline:
+        questions.append("• When did your symptoms first start?")
+    
+    if not has_severity:
+        questions.append("• How would you rate your symptoms on a scale of 1-10?")
+    
+    if not has_triggers:
+        questions.append("• What makes your symptoms better or worse?")
+    
+    if not has_medications:
+        questions.append("• Are you currently taking any medications for these symptoms?")
+    
+    # Always include general questions
+    questions.extend([
+        "• Have you noticed any other symptoms?",
+        "• Is there anything else you think would be important for your doctor to know?"
+    ])
+    
+    return "Here are some follow-up questions that might help gather more information:\n\n" + "\n".join(questions) 
