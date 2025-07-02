@@ -374,9 +374,9 @@ const DashboardPage: React.FC = () => {
             <Box textAlign="center" mt={2}>
               <Button 
                 variant="outlined" 
-                onClick={() => navigate('/conversations')}
+                onClick={() => navigate('/chat')}
               >
-                View All Activity
+                View Chat History
               </Button>
             </Box>
           </Paper>

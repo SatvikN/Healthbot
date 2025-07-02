@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Paper,
   Container,
   Typography,
   Button,
-  TextField,
-  CircularProgress,
   List,
   ListItem,
   ListItemButton,
@@ -16,7 +14,6 @@ import {
   Divider,
 } from '@mui/material';
 import { 
-  Send as SendIcon,
   History as HistoryIcon,
   Add as AddIcon,
 } from '@mui/icons-material';
@@ -39,12 +36,7 @@ interface ActiveConversation {
   messages: Message[];
 }
 
-interface ConversationListItem {
-  id: number;
-  title: string;
-  started_at: string;
-  message_count: number;
-}
+
 
 const ChatPage: React.FC = () => {
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(null);
@@ -330,12 +322,7 @@ const ChatPage: React.FC = () => {
     startConversationMutation.mutate({ chiefComplaint });
   };
 
-  const handleKeyPress = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      handleSendMessage();
-    }
-  };
+
 
   const handleNewConversation = () => {
     setStartDialogOpen(true);

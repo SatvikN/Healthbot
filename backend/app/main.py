@@ -40,7 +40,7 @@ async def create_demo_account():
             date_of_birth="2000-01-01",
             phone="+1 (123) 456-7890",
             address="123 Main Street, San Francisco, CA 94102",
-            emergency_contact="Emergency Contact - +1 (0987) 654-4321",
+            emergency_contact="Temp User - +1 (0987) 654-4321",
             medical_history="Hypertension (2018), Appendectomy (2015), Seasonal allergies",
             allergies="Penicillin, Shellfish, Pollen",
             current_medications="Vitamin B3, Multivitamins, Fish Oil",
