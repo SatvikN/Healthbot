@@ -47,6 +47,34 @@ services:
       timeout: 10s
       retries: 3
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: healthbot_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL=postgresql://healthbot_user:healthbot_password@postgres/healthbot
+      REDIS_URL=redis://redis:6379
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: healthbot_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
   redis_data:
