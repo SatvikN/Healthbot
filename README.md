@@ -138,25 +138,6 @@ pkill -f uvicorn && rm -f healthbot.db && python -m uvicorn backend.app.main:app
 pkill -f uvicorn
 ```
 
-## 📊 API Endpoints
-
-### Authentication
-- `POST /api/auth/token` - Login and get access token
-- `POST /api/auth/register` - Register new user
-- `GET /api/auth/me` - Get current user info
-- `PUT /api/auth/profile` - Update user profile
-
-### Chat & Conversations
-- `POST /api/chat/start` - Start new conversation
-- `POST /api/chat/send-message` - Send message in conversation
-- `GET /api/chat/conversations` - Get user's conversations
-- `GET /api/chat/conversation/{id}` - Get conversation details
-- `DELETE /api/chat/conversation/{id}` - Delete conversation
-- `PUT /api/chat/conversation/{id}/title` - Update conversation title
-- `POST /api/chat/conversation/{id}/diagnosis` - Generate diagnosis
-- `POST /api/chat/conversation/{id}/medical-report` - Generate medical report
-- `GET /api/chat/conversation/{id}/medical-report/download` - Download PDF report
-
 ### Reports & Health Data
 - `GET /api/reports/list` - Get user's medical reports
 - `DELETE /api/reports/{id}` - Delete medical report
@@ -180,61 +161,7 @@ For complete API documentation, visit http://localhost:8000/api/docs when the se
 ### AI Enhancements
 - **Automatic Diagnosis**: AI generates diagnosis predictions after 3+ message exchanges
 - **Enhanced Error Handling**: Defensive programming prevents crashes from malformed data
-- **Fallback Mechanisms**: Graceful degradation when AI services are unavailable
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### Backend won't start
-```bash
-# Check if port is in use
-lsof -i :8000
-
-# Kill existing processes
-pkill -f uvicorn
-
-# Start fresh
-rm -f healthbot.db && python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-```
-
-#### Frontend can't connect to backend
-- Ensure backend is running on http://localhost:8000
-- Check browser console for CORS errors
-- Verify API endpoints in browser developer tools
-
-#### Database errors
-```bash
-# Reset database completely
-rm -f healthbot.db
-# Database will be recreated on next backend startup
-```
-
-#### bcrypt warnings
-The `(trapped) error reading bcrypt version` warning is non-critical and doesn't affect functionality.
-
-## 📋 Project Structure
-
-```
-healthbot/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI application entry point
-│   │   ├── config.py            # Configuration settings
-│   │   ├── database.py          # Database setup and models
-│   │   ├── models/              # SQLAlchemy models
-│   │   ├── routers/             # API route handlers
-│   │   └── services/            # Business logic services
-│   └── requirements.txt         # Python dependencies
-├── src/
-│   ├── components/              # React components
-│   ├── pages/                   # Application pages
-│   ├── services/                # API service functions
-│   └── contexts/                # React context providers
-├── public/                      # Static assets
-├── package.json                 # Node.js dependencies
-└── README.md                    # This file
-```
+- **Fallback Mechanisms**: Graceful degradation when AI services are unavailable   
 
 ---
 
