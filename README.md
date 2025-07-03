@@ -101,30 +101,6 @@ The application will be available at:
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/api/docs
 
-## 📁 Project Structure
-
-```
-healthbot/
-├── backend/                    # FastAPI backend application
-│   ├── app/
-│   │   ├── main.py            # Application entry point
-│   │   ├── config.py          # Configuration settings
-│   │   ├── database.py        # Database connection and setup
-│   │   ├── models/            # SQLAlchemy data models
-│   │   ├── routers/           # API route handlers
-│   │   └── services/          # Business logic and external services
-│   └── requirements.txt       # Python dependencies
-├── src/                       # React frontend application
-│   ├── components/            # Reusable React components
-│   ├── pages/                 # Page-level components
-│   ├── services/              # API client and utilities
-│   └── utils/                 # Helper functions
-├── public/                    # Static assets
-├── docker-compose.yml         # Multi-service Docker configuration
-├── package.json              # Node.js dependencies and scripts
-└── README.md                 # Project documentation
-```
-
 ## 🔧 Development
 
 ### Backend Development
@@ -170,32 +146,6 @@ rm healthbot.db  # SQLite database file
 ```
 
 ## 📊 API Documentation
-
-### Authentication Endpoints
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/token` - User login
-- `GET /api/auth/me` - Get current user profile
-
-### Chat Endpoints
-- `POST /api/chat/start` - Start new medical consultation
-- `POST /api/chat/send-message` - Send message in conversation
-- `GET /api/chat/conversations` - Get user's conversations
-- `GET /api/chat/conversation/{id}` - Get conversation details
-
-### Symptoms Endpoints
-- `POST /api/symptoms/record` - Record new symptom
-- `GET /api/symptoms/list` - Get user's symptoms
-- `POST /api/symptoms/analyze` - AI analysis of symptoms
-
-### Reports Endpoints
-- `POST /api/reports/generate` - Generate medical report
-- `GET /api/reports/list` - Get user's reports
-- `GET /api/reports/download/{id}` - Download report PDF
-
-### Health Check Endpoints
-- `GET /api/health/` - Basic health check
-- `GET /api/health/detailed` - Detailed system status
-
 For complete API documentation, visit http://localhost:8000/api/docs when the server is running.
 
 ## 🐳 Docker Deployment
@@ -220,15 +170,6 @@ docker-compose -f docker-compose.prod.yml build
 # Deploy to production
 docker-compose -f docker-compose.prod.yml up -d
 ```
-
-## 🔒 Security Features
-
-- **JWT Authentication**: Secure token-based authentication
-- **CORS Configuration**: Proper cross-origin resource sharing setup
-- **Input Validation**: Comprehensive request validation using Pydantic
-- **SQL Injection Prevention**: SQLAlchemy ORM with parameterized queries
-- **Environment Variables**: Sensitive configuration via environment variables
-- **HTTPS Ready**: SSL/TLS support for production deployments
 
 ## 🧪 Testing
 
@@ -256,37 +197,6 @@ npm test -- --watch
 # Generate coverage report
 npm test -- --coverage
 ```
-
-## 🚀 Deployment
-
-### Environment Variables
-Create a `.env` file in the project root:
-
-```env
-# Database
-DATABASE_URL=sqlite:///./healthbot.db
-
-# Security
-SECRET_KEY=your-secret-key-here
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# Ollama/LLM
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama2:7b
-
-# CORS
-ALLOWED_ORIGINS=["http://localhost:3000"]
-```
-
-### Production Checklist
-- [ ] Set secure `SECRET_KEY` in production
-- [ ] Configure PostgreSQL database
-- [ ] Set up Redis for caching
-- [ ] Configure HTTPS/SSL certificates
-- [ ] Set up proper logging
-- [ ] Configure backup strategies
-- [ ] Set up monitoring and health checks
 
 ---
 
