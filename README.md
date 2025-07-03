@@ -48,9 +48,10 @@ A comprehensive AI-powered medical diagnosis assistant that helps users collect 
 
 ## 🚀 Quick Start
 
+This project is fully containerized using Docker, which is the recommended way to run the application for a consistent and hassle-free experience.
+
 ### Prerequisites
-- Python 3.11+
-- Node.js 18+
+- Docker and Docker Compose (latest versions recommended)
 - Git
 
 ### 1. Clone the Repository
@@ -59,26 +60,50 @@ git clone https://github.com/SatvikN/healthbot.git
 cd healthbot
 ```
 
-### 2. Backend Setup
+### 2. Docker-Based Setup (Recommended)
 
-**Important**: Run all backend commands from the project root directory.
+This single command will build the container images, download dependencies, and start all the services (Frontend, Backend, Postgres, Redis, and Ollama).
 
 ```bash
-# Create and activate virtual environment
-python -m venv healthbot-backend-env
-source healthbot-backend-env/bin/activate  # On Windows: healthbot-backend-env\Scripts\activate
+# From the project root directory
+docker-compose up --build
+```
 
-# Install dependencies
-pip install -r requirements.txt
+- The `--build` flag is only necessary the first time you run it or after making changes to the `Dockerfile`s or application dependencies.
+- To run in the background, use `docker-compose up -d`.
+
+Once the containers are running, the application will be available at:
+- **Frontend**: http://localhost:3000
+- **Backend API Docs**: http://localhost:8000/api/docs
+- **Ollama LLM Service**: http://localhost:11434
+
+To stop the application:
+```bash
+docker-compose down
+```
+
+### 3. Manual Local Setup (Without Docker)
+
+If you prefer to run the services manually without Docker, follow these steps.
+
+**Backend Setup**
+```bash
+# Navigate to the backend directory
+cd backend
+
+# Create and activate virtual environment
+python -m venv ../healthbot-backend-env
+source ../healthbot-backend-env/bin/activate
+
+# Install dependencies from the root directory's requirements.txt
+pip install -r ../requirements.txt
 
 # Start the FastAPI server (from project root)
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --log-level info
-
-# For auto-reload during development
+cd ..
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### 3. Frontend Setup
+**Frontend Setup**
 ```bash
 # Install dependencies
 npm install
@@ -87,17 +112,33 @@ npm install
 npm start
 ```
 
-The application will be available at:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/api/docs
-
 ### 4. Demo Account
-The application automatically creates a demo account:
-- **Email**: demo@healthbot.com
-- **Password**: demo123
+The application automatically creates a demo account on startup:
+- **Email**: `demo@healthbot.com`
+- **Password**: `demo123`
 
 ## 🔧 Development
+
+### Docker Development
+For development, you can run the services in detached mode and view logs for a specific service.
+
+```bash
+# Start all services in the background
+docker-compose up -d
+
+# View logs for the backend
+docker-compose logs -f backend
+
+# View logs for the frontend
+docker-compose logs -f frontend
+```
+The volumes in `docker-compose.yml` are configured to mount your local code into the containers, so changes you make to the backend or frontend will trigger a live reload.
+
+### Stopping All Services
+```bash
+docker-compose down
+```
+To remove the volumes (and all data), use `docker-compose down -v`.
 
 ### Backend Development
 ```bash
