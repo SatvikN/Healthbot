@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -25,6 +25,7 @@ import {
   MoreVert as MoreVertIcon,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from 'react-query';
+import { useLocation } from 'react-router-dom';
 
 import { useSnackbar } from '../contexts/SnackbarContext';
 import ChatInterface from '../components/Chat/ChatInterface';
@@ -49,8 +50,6 @@ interface AutoDiagnosis {
   confidence_note: string;
 }
 
-
-
 const ChatPage: React.FC = () => {
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(null);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
@@ -59,6 +58,15 @@ const ChatPage: React.FC = () => {
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   const [autoDiagnosis, setAutoDiagnosis] = useState<AutoDiagnosis | null>(null);
   const { showMessage } = useSnackbar();
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const conversationId = params.get('conversationId');
+    if (conversationId) {
+      loadConversation(Number(conversationId));
+    }
+  }, [location]);
 
   // Load conversations list
   const { data: conversations, refetch: refetchConversations } = useQuery(
@@ -383,7 +391,7 @@ const ChatPage: React.FC = () => {
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `medical_report_${conversationId}_${new Date().toISOString().split('T')[0]}.pdf`;
+        link.download = `HealthBot_Report_${new Date().toISOString().split('T')[0]}.pdf`;
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -428,8 +436,6 @@ const ChatPage: React.FC = () => {
     }
   };
 
-
-
   const handleQuickReply = (replyMessage: string) => {
     sendMessage(replyMessage);
   };
@@ -449,8 +455,6 @@ const ChatPage: React.FC = () => {
   const handleStartConversation = (chiefComplaint: string) => {
     startConversationMutation.mutate({ chiefComplaint });
   };
-
-
 
   const handleNewConversation = () => {
     setStartDialogOpen(true);
@@ -510,7 +514,14 @@ const ChatPage: React.FC = () => {
         </Box>
 
         {/* Main chat area */}
-        <Paper sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Paper sx={{ 
+          flexGrow: 1, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          overflow: 'hidden',
+          boxShadow: 'none',
+          border: 'none'
+        }}>
           {activeConversation ? (
             <>
               {/* Chat header */}

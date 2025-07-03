@@ -103,13 +103,16 @@ export interface SymptomRecord {
 export interface Report {
   id: number;
   title: string;
-  report_type: string;
+  type: string;
   status: string;
-  generated_at: string;
-  conversation_id?: number;
-  symptom_count: number;
-  urgency_level?: string;
-  file_path?: string;
+  createdAt: string;
+  conversationId: number;
+  conversationTitle?: string;
+  summary?: string;
+  urgencyLevel: string;
+  keyFindings: string[];
+  recommendations: string[];
+  fileSize?: string;
 }
 
 // API Services

@@ -207,6 +207,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         flexDirection: 'column',
         bgcolor: 'grey.50',
         position: 'relative',
+        boxShadow: 'none',
+        border: 'none',
       }}
     >
       {/* Messages container */}
@@ -351,16 +353,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       {/* Message Input */}
       <Box
         sx={{
-          p: 2,
+          pt: 2,
+          px: 2,
+          pb: 2,
           borderTop: '1px solid',
           borderColor: 'divider',
           bgcolor: 'background.paper',
         }}
       >
-        <Box display="flex" gap={1} alignItems="flex-end">
+        <Box display="flex" gap={1} alignItems="center">
           <TextField
             fullWidth
             multiline
+            rows={4}
             maxRows={4}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}

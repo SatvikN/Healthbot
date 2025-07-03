@@ -46,6 +46,7 @@ import {
 } from '@mui/icons-material';
 import { useSnackbar } from '../contexts/SnackbarContext';
 import { reportsAPI } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
 interface MedicalReport {
   id: number;
@@ -64,6 +65,7 @@ interface MedicalReport {
 
 const ReportsPage: React.FC = () => {
   const { showMessage } = useSnackbar();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -99,16 +101,16 @@ const ReportsPage: React.FC = () => {
       const transformedReports: MedicalReport[] = backendReports.map(report => ({
         id: report.id,
         title: report.title,
-        type: (report as any).report_type || 'initial_consultation',
+        type: report.type as any,
         status: report.status as any,
-        createdAt: (report as any).generated_at || new Date().toISOString(),
-        conversationId: (report as any).conversation_id || 0,
-        conversationTitle: `Conversation ${(report as any).conversation_id || 'Unknown'}`,
-        summary: `Report generated with ${(report as any).symptom_count || 0} symptoms documented.`,
-        urgencyLevel: (report as any).urgency_level || 'low',
-        keyFindings: ['Report generated from conversation', 'Symptoms documented', 'Analysis completed'],
-        recommendations: ['Review with healthcare provider', 'Follow up if needed', 'Monitor symptoms'],
-        fileSize: '2.1 MB'
+        createdAt: report.createdAt,
+        conversationId: report.conversationId,
+        conversationTitle: report.conversationTitle || `Conversation ${report.conversationId}`,
+        summary: report.summary || 'No summary available.',
+        urgencyLevel: report.urgencyLevel as any,
+        keyFindings: report.keyFindings || [],
+        recommendations: report.recommendations || [],
+        fileSize: report.fileSize || 'N/A'
       }));
       
       setReports(transformedReports);
@@ -182,12 +184,42 @@ const ReportsPage: React.FC = () => {
     setDetailsDialogOpen(true);
   };
 
-  const handleDownloadReport = (report: MedicalReport) => {
-    showMessage(`Downloading ${report.title} (${report.fileSize})`, 'info');
+  const handleDownloadReport = async (report: MedicalReport) => {
+    try {
+      // Check if we have a valid conversation ID
+      if (!report.conversationId || report.conversationId === 0) {
+        showMessage('Cannot download: Report is not linked to a valid conversation.', 'error');
+        console.error('Invalid conversationId:', report.conversationId, 'for report:', report);
+        return;
+      }
+
+      showMessage(`Downloading ${report.title} (${report.fileSize})`, 'info');
+      
+      // Use the chat API download endpoint with conversationId
+      const { chatAPI } = await import('../services/api');
+      const blob = await chatAPI.downloadMedicalReportPDF(report.conversationId);
+      
+      // Create download link and trigger download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${report.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      showMessage(`${report.title} downloaded successfully!`, 'success');
+    } catch (error: any) {
+      console.error('Error downloading report:', error);
+      console.error('Report data:', report);
+      const errorMsg = error.response?.data?.detail || error.message || 'Unknown error occurred';
+      showMessage(`Failed to download report: ${errorMsg}`, 'error');
+    }
   };
 
   const handleViewConversation = (conversationId: number) => {
-    showMessage(`Opening conversation #${conversationId} in Chat section`, 'info');
+    navigate(`/chat?conversationId=${conversationId}`);
   };
 
   const handleDeleteReport = (report: MedicalReport) => {
