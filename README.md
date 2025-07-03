@@ -48,7 +48,7 @@ A comprehensive AI-powered medical diagnosis assistant that helps users collect 
 
 ## 🚀 Quick Start
 
-This project is fully containerized using Docker, which is the recommended way to run the application for a consistent and hassle-free experience.
+This project is fully containerized using Docker, which is the recommended way to run the application.
 
 ### Prerequisites
 - Docker and Docker Compose (latest versions recommended)
@@ -132,13 +132,11 @@ docker-compose logs -f backend
 # View logs for the frontend
 docker-compose logs -f frontend
 ```
-The volumes in `docker-compose.yml` are configured to mount your local code into the containers, so changes you make to the backend or frontend will trigger a live reload.
 
 ### Stopping All Services
 ```bash
 docker-compose down
 ```
-To remove the volumes (and all data), use `docker-compose down -v`.
 
 ### Backend Development
 ```bash
@@ -167,7 +165,6 @@ npm run build
 rm -f healthbot.db
 
 # Database tables are created automatically on startup
-# No manual setup required
 ```
 
 ### Common Commands
@@ -179,30 +176,8 @@ pkill -f uvicorn && rm -f healthbot.db && python -m uvicorn backend.app.main:app
 pkill -f uvicorn
 ```
 
-### Reports & Health Data
-- `GET /api/reports/list` - Get user's medical reports
-- `DELETE /api/reports/{id}` - Delete medical report
-- `POST /api/reports/generate-summary` - Generate health summary
-- `GET /api/symptoms/list` - Get symptom data
-
+### RPI Documentation
 For complete API documentation, visit http://localhost:8000/api/docs when the server is running.
-
-## 🆕 New Features Implemented
-
-### Conversation Management
-- **Delete Conversations**: Three-dot menu (⋮) next to each conversation with delete confirmation
-- **Automatic Cleanup**: Active conversation state cleared when deleted
-
-### Medical Reports
-- **PDF Downloads**: Professional medical reports downloaded as PDF files
-- **In-Chat Notifications**: Success messages displayed in chat when reports are generated
-- **Report Deletion**: Delete reports with comprehensive confirmation dialogs
-- **Detailed Information**: Report cards show patient info, date, and medical details
-
-### AI Enhancements
-- **Automatic Diagnosis**: AI generates diagnosis predictions after 3+ message exchanges
-- **Enhanced Error Handling**: Defensive programming prevents crashes from malformed data
-- **Fallback Mechanisms**: Graceful degradation when AI services are unavailable   
 
 ---
 
